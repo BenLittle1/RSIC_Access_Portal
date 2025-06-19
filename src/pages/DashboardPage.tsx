@@ -260,7 +260,7 @@ const DashboardPage = () => {
           </h1>
           <div className="flex items-center space-x-4">
             <span className="text-black font-bold">
-              {profile.full_name} - {profile.organization}
+              {profile.organization}
             </span>
             <button
               onClick={() => {

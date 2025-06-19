@@ -233,7 +233,7 @@ const UserAuthenticationPage = () => {
           <h1 className="text-3xl font-bold text-black">User Authentication Management</h1>
           <div className="flex items-center space-x-4">
             <span className="text-black font-bold">
-              {currentProfile.full_name} - {currentProfile.organization}
+              {currentProfile.organization}
             </span>
             <button
               onClick={() => navigate('/settings')}
