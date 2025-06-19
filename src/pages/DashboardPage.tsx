@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import GuestList from '../components/GuestList'
 import CalendarView from '../components/CalendarView'
 import AddGuestModal from '../components/AddGuestModal'
+import { EMAIL_API_URL } from '../utils/constants'
 
 interface Profile {
   id: string
@@ -171,6 +172,32 @@ const DashboardPage = () => {
           ? { ...guest, arrival_status: arrivalStatus }
           : guest
       ))
+
+      // Send email notification when guest arrives
+      if (arrivalStatus) {
+        try {
+          const response = await fetch(`${EMAIL_API_URL}/notify-arrival`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              guestId,
+              arrivalStatus
+            })
+          })
+
+          if (response.ok) {
+            const result = await response.json()
+            console.log('✅ Email notification sent successfully:', result)
+          } else {
+            const errorData = await response.json()
+            console.error('❌ Failed to send email notification:', errorData)
+          }
+        } catch (emailError) {
+          console.error('❌ Error sending email notification:', emailError)
+        }
+      }
     }
   }
 
