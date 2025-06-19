@@ -116,7 +116,7 @@ const ProfileSettingsPage = () => {
           <h1 className="text-3xl font-bold text-black">Profile Settings</h1>
           <div className="flex items-center space-x-4">
             <span className="text-black font-bold">
-              {profile.full_name} - {profile.organization}
+              {profile.full_name}
             </span>
             <button
               onClick={() => navigate(isSecurityUser ? '/settings' : '/dashboard')}

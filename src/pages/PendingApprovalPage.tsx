@@ -117,7 +117,7 @@ const PendingApprovalPage = () => {
           <h1 className="text-3xl font-bold text-black">SRIC Access Portal</h1>
           <div className="flex items-center space-x-4">
             <span className="text-black font-bold">
-              {profile.full_name} - {profile.organization}
+              {profile.full_name}
             </span>
             <button
               onClick={handleSignOut}
