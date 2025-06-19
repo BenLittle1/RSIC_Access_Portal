@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
+import { ORGANIZATIONS } from '../utils/constants'
 
 interface Profile {
   id: string
@@ -22,6 +23,8 @@ const UserAuthenticationPage = () => {
   const [isPasswordProtected, setIsPasswordProtected] = useState(true)
   const [passwordInput, setPasswordInput] = useState('')
   const [passwordError, setPasswordError] = useState('')
+  const [editingOrganization, setEditingOrganization] = useState<string | null>(null)
+  const [updatingOrganization, setUpdatingOrganization] = useState<string | null>(null)
 
 
   useEffect(() => {
@@ -103,6 +106,32 @@ const UserAuthenticationPage = () => {
     }
 
     setUpdating(null)
+  }
+
+  const updateOrganization = async (profileId: string, newOrganization: string) => {
+    setUpdatingOrganization(profileId)
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ organization: newOrganization })
+      .eq('id', profileId)
+
+    if (error) {
+      console.error('Error updating organization:', error)
+      alert('Error updating organization')
+    } else {
+      // Update local state
+      setAllProfiles(profiles => 
+        profiles.map(profile => 
+          profile.id === profileId 
+            ? { ...profile, organization: newOrganization }
+            : profile
+        )
+      )
+      setEditingOrganization(null)
+    }
+
+    setUpdatingOrganization(null)
   }
 
   const getStatusBadge = (status: string) => {
@@ -253,9 +282,41 @@ const UserAuthenticationPage = () => {
                     {profile.email || 'No email'}
                   </td>
                   <td className="p-3 border-r border-gray-200 text-black">
-                    <span className="px-2 py-1 bg-gray-100 border border-gray-300 text-xs font-medium rounded">
-                      {profile.organization}
-                    </span>
+                    {editingOrganization === profile.id ? (
+                      <div className="flex items-center space-x-2">
+                        <select
+                          value={profile.organization}
+                          onChange={(e) => updateOrganization(profile.id, e.target.value)}
+                          disabled={updatingOrganization === profile.id}
+                          className="px-2 py-1 border border-black text-xs font-medium rounded bg-white focus:outline-none focus:ring-2 focus:ring-gray-400"
+                        >
+                          {ORGANIZATIONS.map((org) => (
+                            <option key={org} value={org}>
+                              {org}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => setEditingOrganization(null)}
+                          disabled={updatingOrganization === profile.id}
+                          className="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 border border-gray-400 rounded"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center space-x-2">
+                        <span className="px-2 py-1 bg-gray-100 border border-gray-300 text-xs font-medium rounded">
+                          {profile.organization}
+                        </span>
+                        <button
+                          onClick={() => setEditingOrganization(profile.id)}
+                          className="px-2 py-1 text-xs bg-blue-600 text-white hover:bg-blue-700 rounded transition-colors"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    )}
                   </td>
                   <td className="p-3 border-r border-gray-200">
                     <span className={getStatusBadge(profile.authentication_status)}>
