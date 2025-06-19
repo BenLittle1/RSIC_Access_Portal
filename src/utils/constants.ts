@@ -16,9 +16,7 @@ export const DATE_FORMAT = 'yyyy-MM-dd'
 export const TIME_FORMAT = 'HH:mm'
 
 // API Configuration
-export const EMAIL_API_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://your-backend-url.railway.app/api' 
-  : 'http://localhost:3001/api'
+export const EMAIL_API_URL = 'http://localhost:3001/api'
 
 export const DATE_FORMAT_DISPLAY = {
   DATABASE: 'yyyy-MM-dd',
