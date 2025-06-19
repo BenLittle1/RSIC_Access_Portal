@@ -42,7 +42,7 @@ app.use('/api/', limiter);
 const createEmailTransporter = () => {
   // Support multiple email providers
   if (process.env.EMAIL_PROVIDER === 'gmail') {
-    return nodemailer.createTransporter({
+    return nodemailer.createTransport({
       service: 'gmail',
       auth: {
         user: process.env.EMAIL_USER,
@@ -50,7 +50,7 @@ const createEmailTransporter = () => {
       }
     });
   } else if (process.env.EMAIL_PROVIDER === 'sendgrid') {
-    return nodemailer.createTransporter({
+    return nodemailer.createTransport({
       host: 'smtp.sendgrid.net',
       port: 587,
       auth: {
@@ -60,7 +60,7 @@ const createEmailTransporter = () => {
     });
   } else {
     // Generic SMTP
-    return nodemailer.createTransporter({
+    return nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: process.env.SMTP_PORT || 587,
       secure: process.env.SMTP_SECURE === 'true',
