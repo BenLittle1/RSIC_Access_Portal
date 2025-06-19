@@ -255,7 +255,9 @@ const DashboardPage = () => {
       {/* Header */}
       <header className="border-b border-black bg-white px-6 py-4">
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-black">SRIC Access Portal</h1>
+          <h1 className="text-3xl font-bold text-black">
+            SRIC Access Portal - {isSecurityUser ? 'Security' : profile.organization}
+          </h1>
           <div className="flex items-center space-x-4">
             <span className="text-black font-bold">
               {profile.full_name} - {profile.organization}
