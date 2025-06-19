@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { supabase } from '../supabase'
+import { supabase } from '../lib/supabase'
 import { Link, useNavigate } from 'react-router-dom'
 import PasswordStrength from './PasswordStrength'
 
@@ -14,7 +14,7 @@ const SignUp = () => {
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const organizations = ['Security', 'Organization A', 'Organization B', 'Organization C']
+  const organizations = ['Security', 'AXL', 'Knowledgehook', 'Yscope']
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -43,8 +43,8 @@ const SignUp = () => {
     if (error) {
       setError(error.message)
     } else if (data.user) {
-      setSuccess('Registration successful! Please check your email to verify your account.')
-      setTimeout(() => navigate('/'), 3000)
+      setSuccess('Registration successful! Please check your email to verify your account, then wait for administrator approval.')
+      setTimeout(() => navigate('/pending-approval'), 3000)
     }
     setLoading(false)
   }
@@ -132,6 +132,13 @@ const SignUp = () => {
         
         {error && <p className="text-sm text-center text-red-500">{error}</p>}
         {success && <p className="text-sm text-center text-green-600">{success}</p>}
+
+        {/* Email Verification Notice */}
+        <div className="p-3 border border-blue-500 bg-blue-50">
+          <p className="text-sm text-blue-800">
+            <strong>Note:</strong> After registration, you'll need to verify your email address and wait for administrator approval before accessing the system.
+          </p>
+        </div>
 
         <button
           type="submit"

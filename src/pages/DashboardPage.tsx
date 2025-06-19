@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../supabase'
+import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import GuestList from '../components/GuestList'
 import CalendarView from '../components/CalendarView'
@@ -10,6 +10,7 @@ interface Profile {
   user_id: string
   full_name: string
   username: string
+  email?: string
   organization: string
   authentication_status: string
 }
@@ -23,6 +24,7 @@ interface Guest {
   floor_access: string
   inviter_id: string
   organization: string
+  requester_email?: string
   inviter_name?: string
 }
 
@@ -81,6 +83,14 @@ const DashboardPage = () => {
         })
       } else {
         console.log('✅ Profile fetched:', profileData)
+        
+        // Check if user is approved
+        if (profileData.authentication_status !== 'Approved') {
+          console.log('ℹ️ User not approved, redirecting to pending approval page')
+          navigate('/pending-approval')
+          return
+        }
+        
         setProfile(profileData)
       }
       
@@ -220,9 +230,21 @@ const DashboardPage = () => {
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold text-black">SRIC Access Portal</h1>
           <div className="flex items-center space-x-4">
-            <span className="text-black">
-              Welcome, {profile.full_name} ({profile.organization})
+            <span className="text-black font-bold">
+              {profile.full_name} - {profile.organization}
             </span>
+            <button
+              onClick={() => {
+                if (isSecurityUser) {
+                  navigate('/settings')
+                } else {
+                  navigate('/settings/profile')
+                }
+              }}
+              className="px-4 py-2 bg-black text-white hover:bg-gray-800 transition-colors"
+            >
+              Settings
+            </button>
             <button
               onClick={handleLogout}
               className="px-4 py-2 bg-black text-white hover:bg-gray-800 transition-colors"

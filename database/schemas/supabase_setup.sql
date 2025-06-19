@@ -5,6 +5,7 @@ CREATE TABLE public.profiles (
   user_id uuid NOT NULL,
   full_name text,
   username text,
+  email text,
   organization text,
   authentication_status text DEFAULT 'Pending',
   created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
@@ -26,11 +27,12 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  INSERT INTO public.profiles (user_id, full_name, username, organization)
+  INSERT INTO public.profiles (user_id, full_name, username, email, organization)
   VALUES (
     new.id,
     new.raw_user_meta_data->>'full_name',
     new.raw_user_meta_data->>'username',
+    new.email,
     new.raw_user_meta_data->>'organization'
   );
   RETURN new;
@@ -94,6 +96,7 @@ CREATE TABLE public.guests (
   floor_access text NOT NULL,
   inviter_id uuid NOT NULL,
   organization text NOT NULL,
+  requester_email text,
   CONSTRAINT guests_pkey PRIMARY KEY (id),
   CONSTRAINT guests_inviter_id_fkey FOREIGN KEY (inviter_id) REFERENCES auth.users(id) ON DELETE CASCADE
 );

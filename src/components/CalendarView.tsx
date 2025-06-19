@@ -14,10 +14,7 @@ const CalendarView = ({ selectedDate, onSelectDate }: CalendarViewProps) => {
   }
 
   return (
-    <div className="h-full bg-white p-6">
-      <h3 className="text-xl font-bold text-black mb-4 border-b border-black pb-2">
-        Calendar
-      </h3>
+    <div className="h-full bg-white p-4">
       
       <div 
         className="calendar-container"
@@ -181,19 +178,19 @@ const CalendarView = ({ selectedDate, onSelectDate }: CalendarViewProps) => {
         />
       </div>
       
-      <div className="mt-6 p-4 border border-black bg-gray-50">
-        <h4 className="font-bold text-black mb-2">Selected Date</h4>
-        <p className="text-black">
-          {selectedDate.toLocaleDateString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-          })}
-        </p>
+              <div className="mt-6 p-4 border border-black bg-gray-50">
+          <h4 className="font-bold text-black mb-2">Selected Date</h4>
+          <p className="text-black">
+            {selectedDate.toLocaleDateString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
+            })}
+          </p>
+        </div>
       </div>
-    </div>
-  )
-}
+    )
+  }
 
 export default CalendarView 

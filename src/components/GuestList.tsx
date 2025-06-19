@@ -9,6 +9,7 @@ interface Guest {
   floor_access: string
   inviter_id: string
   organization: string
+  requester_email?: string
   inviter_name?: string
 }
 
