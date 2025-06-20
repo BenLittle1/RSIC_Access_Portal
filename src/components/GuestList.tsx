@@ -128,12 +128,14 @@ const GuestList = ({
                   }`}
                 >
                   <td className="p-3 border-r border-gray-200">
-                    <input
-                      type="checkbox"
-                      checked={guest.arrival_status}
-                      onChange={(e) => onUpdateArrivalStatus(guest.id, e.target.checked)}
-                      className="w-4 h-4 text-black border-2 border-black rounded focus:ring-black focus:ring-2"
-                    />
+                    <div className="flex items-center justify-start pl-2">
+                      <input
+                        type="checkbox"
+                        checked={guest.arrival_status}
+                        onChange={(e) => onUpdateArrivalStatus(guest.id, e.target.checked)}
+                        className="w-4 h-4 text-black bg-white border-2 border-black rounded focus:ring-black focus:ring-2 accent-black"
+                      />
+                    </div>
                   </td>
                   <td className="p-3 border-r border-gray-200 font-medium text-black">
                     {guest.name}
