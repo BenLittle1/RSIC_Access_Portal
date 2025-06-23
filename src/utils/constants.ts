@@ -10,7 +10,8 @@ export const AUTHENTICATION_STATUSES = {
   DENIED: 'Denied'
 } as const
 
-export const SECURITY_PASSWORD = 'AXL'
+// SECURITY NOTE: Admin authorization should be server-side only
+// Client-side password checks are inherently insecure
 
 export const DATE_FORMAT = 'yyyy-MM-dd'
 export const TIME_FORMAT = 'HH:mm'

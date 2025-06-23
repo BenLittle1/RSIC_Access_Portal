@@ -6,6 +6,7 @@ import CalendarView from '../components/CalendarView'
 import AddGuestModal from '../components/AddGuestModal'
 import DashboardMetrics from '../components/DashboardMetrics'
 import { EMAIL_API_URL } from '../utils/constants'
+import { notifyGuestArrival } from '../utils/api'
 
 interface Profile {
   id: string
@@ -203,29 +204,10 @@ const DashboardPage = () => {
 
       // Send email notification when guest arrives (non-blocking)
       if (arrivalStatus) {
-        // Run email notification in background without blocking UI
-        fetch(`${EMAIL_API_URL}/notify-arrival`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            guestId,
-            arrivalStatus
-          })
-        })
-        .then(response => {
-          if (response.ok) {
-            return response.json()
-          } else {
-            throw new Error('Email notification failed')
-          }
-        })
-        .then(result => {
-          console.log('✅ Email notification sent successfully:', result)
-        })
-        .catch(emailError => {
-          console.error('❌ Error sending email notification:', emailError)
+        // Use authenticated API utility for email notifications
+        notifyGuestArrival(guestId, arrivalStatus).catch(emailError => {
+          // Don't block UI for email errors, just log them
+          console.error('❌ Email notification failed (non-blocking):', emailError)
         })
       }
     } catch (error) {

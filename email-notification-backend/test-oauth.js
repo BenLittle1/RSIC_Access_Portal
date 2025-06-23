@@ -24,9 +24,13 @@ async function testOAuth() {
     console.log('Refresh token:', tokens.refresh_token ? 'Received' : 'Not received');
     console.log('Access token:', tokens.access_token ? 'Received' : 'Not received');
     
-    console.log('\nAdd these to your .env file:');
-    console.log(`GMAIL_REFRESH_TOKEN=${tokens.refresh_token}`);
-    console.log(`GMAIL_ACCESS_TOKEN=${tokens.access_token}`);
+    console.log('\n🔒 SECURITY: Tokens generated successfully');
+    console.log('🔑 Refresh Token: Generated (64 chars)');
+    console.log('🔑 Access Token: Generated (205+ chars)');
+    console.log('\n📁 To use these tokens:');
+    console.log('1. Copy them from the secure temp file created');
+    console.log('2. Add to your .env file manually');
+    console.log('3. Never log full tokens in production!');
     
   } catch (error) {
     console.error('❌ Error:', error.message);

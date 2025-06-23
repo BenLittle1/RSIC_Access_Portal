@@ -6,16 +6,140 @@ const rateLimit = require('express-rate-limit');
 const nodemailer = require('nodemailer');
 const { createClient } = require('@supabase/supabase-js');
 const emailProcessor = require('./emailProcessor');
+const { body, param, validationResult } = require('express-validator');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// 🔒 VALIDATION FEATURE FLAG - Set to 'false' to disable all validation
+const ENABLE_VALIDATION = process.env.ENABLE_VALIDATION !== 'false';
+
+console.log(`🛡️ Input validation: ${ENABLE_VALIDATION ? 'ENABLED' : 'DISABLED'}`);
 
 // Initialize Supabase client
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_ANON_KEY
 );
+
+// Service role client for system operations (bypasses RLS)
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+// 🛡️ Validation Rules (Conservative - won't break existing functionality)
+const arrivalValidation = [
+  body('guestId')
+    .optional()
+    .isLength({ min: 1, max: 100 })
+    .withMessage('Guest ID must be 1-100 characters'),
+  body('arrivalStatus')
+    .optional()
+    .isBoolean()
+    .withMessage('Arrival status must be true or false')
+];
+
+const emailValidation = [
+  body('from')
+    .optional()
+    .isLength({ min: 1, max: 500 })
+    .withMessage('From field too long (max 500 chars)')
+    .matches(/^[^{}]*$/)
+    .withMessage('From field contains dangerous characters'),
+  body('subject')
+    .optional()
+    .isLength({ max: 500 })
+    .withMessage('Subject too long (max 500 chars)'),
+  body('text')
+    .optional()
+    .isLength({ max: 100000 })
+    .withMessage('Email text too long (max 100KB)'),
+  body('html')
+    .optional()
+    .isLength({ max: 200000 })
+    .withMessage('Email HTML too long (max 200KB)')
+];
+
+// 🛡️ Validation Middleware (Conditional based on feature flag)
+const validateRequest = (validationRules) => {
+  return [
+    ...validationRules,
+    (req, res, next) => {
+      // Skip validation if disabled
+      if (!ENABLE_VALIDATION) {
+        return next();
+      }
+      
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        console.log(`❌ Validation failed for ${req.method} ${req.path}:`, errors.array());
+        return res.status(400).json({
+          error: 'Input validation failed',
+          details: errors.array(),
+          note: 'Set ENABLE_VALIDATION=false in .env to disable validation'
+        });
+      }
+      next();
+    }
+  ];
+};
+
+// JWT Authentication Middleware
+const authenticateUser = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ 
+        error: 'Unauthorized: Missing or invalid authorization header' 
+      });
+    }
+
+    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    
+    // Verify the JWT token with Supabase
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    
+    if (error || !user) {
+      return res.status(401).json({ 
+        error: 'Unauthorized: Invalid or expired token' 
+      });
+    }
+
+    // Get user profile for additional checks
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
+
+    if (profileError || !profile) {
+      return res.status(401).json({ 
+        error: 'Unauthorized: User profile not found' 
+      });
+    }
+
+    // Check if user is approved
+    if (profile.authentication_status !== 'Approved') {
+      return res.status(403).json({ 
+        error: 'Forbidden: User account not approved' 
+      });
+    }
+
+    // Add user info to request for use in route handlers
+    req.user = user;
+    req.profile = profile;
+    next();
+    
+  } catch (error) {
+    console.error('Authentication error:', error);
+    res.status(401).json({ 
+      error: 'Unauthorized: Authentication failed' 
+    });
+  }
+};
 
 // Middleware
 app.use(helmet());
@@ -222,7 +346,29 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-app.post('/api/notify-arrival', async (req, res) => {
+// Secure admin verification endpoint
+app.post('/api/verify-admin', authenticateUser, async (req, res) => {
+  try {
+    const { password } = req.body;
+    const adminPassword = process.env.ADMIN_PASSWORD || 'AXL';
+    
+    if (password === adminPassword) {
+      // Double-check user is actually Security role
+      if (req.profile.organization !== 'Security') {
+        return res.status(403).json({ error: 'Insufficient privileges' });
+      }
+      
+      res.json({ verified: true });
+    } else {
+      res.status(401).json({ error: 'Invalid password' });
+    }
+  } catch (error) {
+    console.error('Admin verification error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/notify-arrival', validateRequest(arrivalValidation), authenticateUser, async (req, res) => {
   try {
     const { guestId, arrivalStatus } = req.body;
 
@@ -315,7 +461,7 @@ app.post('/api/notify-arrival', async (req, res) => {
 // Email Processing API Routes
 
 // Webhook endpoint for incoming emails (from email service providers)
-app.post('/api/process-email', async (req, res) => {
+app.post('/api/process-email', validateRequest(emailValidation), async (req, res) => {
   try {
     const { from, subject, text, html } = req.body;
     
@@ -358,10 +504,17 @@ app.post('/api/process-email', async (req, res) => {
   }
 });
 
-// Get pending email-processed guests for a user
-app.get('/api/email-guests/pending/:userId', async (req, res) => {
+// Get pending email-processed guests for a user (PROTECTED)
+app.get('/api/email-guests/pending/:userId', authenticateUser, async (req, res) => {
   try {
     const { userId } = req.params;
+
+    // Security: Users can only access their own data unless they're Security
+    if (req.user.id !== userId && req.profile.organization !== 'Security') {
+      return res.status(403).json({ 
+        error: 'Forbidden: Access denied to this user data' 
+      });
+    }
 
     if (!userId) {
       return res.status(400).json({ error: 'User ID required' });
@@ -393,11 +546,18 @@ app.get('/api/email-guests/pending/:userId', async (req, res) => {
   }
 });
 
-// Approve an email-processed guest and create actual guest record
-app.post('/api/email-guests/approve/:recordId', async (req, res) => {
+// Approve an email-processed guest and create actual guest record (PROTECTED)
+app.post('/api/email-guests/approve/:recordId', authenticateUser, async (req, res) => {
   try {
     const { recordId } = req.params;
     const { guestData, userId } = req.body;
+
+    // Security: Users can only approve their own records unless they're Security
+    if (req.user.id !== userId && req.profile.organization !== 'Security') {
+      return res.status(403).json({ 
+        error: 'Forbidden: Access denied to this user data' 
+      });
+    }
 
     if (!recordId || !guestData || !userId) {
       return res.status(400).json({ 
@@ -421,19 +581,18 @@ app.post('/api/email-guests/approve/:recordId', async (req, res) => {
       return res.status(400).json({ error: 'Record already processed' });
     }
 
-    // Create the guest record
-    const { data: newGuest, error: guestError } = await supabase
+    // Create guest in database using admin client (bypasses RLS)
+    const { data: guestData, error: guestError } = await supabaseAdmin
       .from('guests')
-      .insert({
+      .insert([{
         name: guestData.name,
         visit_date: guestData.visit_date,
         estimated_arrival: guestData.estimated_arrival,
-        arrival_status: false,
         floor_access: guestData.floor_access,
-        inviter_id: userId,
         organization: guestData.organization,
+        inviter_id: guestData.inviter_id,
         requester_email: emailRecord.sender_email
-      })
+      }])
       .select()
       .single();
 
@@ -446,7 +605,7 @@ app.post('/api/email-guests/approve/:recordId', async (req, res) => {
       .from('email_processed_guests')
       .update({ 
         processing_status: 'approved',
-        guest_id: newGuest.id
+        guest_id: guestData.id
       })
       .eq('id', recordId);
 
@@ -457,7 +616,7 @@ app.post('/api/email-guests/approve/:recordId', async (req, res) => {
     res.json({
       success: true,
       message: 'Guest approved and created successfully',
-      guest: newGuest
+      guest: guestData
     });
 
   } catch (error) {
@@ -469,11 +628,18 @@ app.post('/api/email-guests/approve/:recordId', async (req, res) => {
   }
 });
 
-// Reject an email-processed guest
-app.post('/api/email-guests/reject/:recordId', async (req, res) => {
+// Reject an email-processed guest (PROTECTED)
+app.post('/api/email-guests/reject/:recordId', authenticateUser, async (req, res) => {
   try {
     const { recordId } = req.params;
     const { userId, reason } = req.body;
+
+    // Security: Users can only reject their own records unless they're Security
+    if (req.user.id !== userId && req.profile.organization !== 'Security') {
+      return res.status(403).json({ 
+        error: 'Forbidden: Access denied to this user data' 
+      });
+    }
 
     if (!recordId || !userId) {
       return res.status(400).json({ 
@@ -510,9 +676,16 @@ app.post('/api/email-guests/reject/:recordId', async (req, res) => {
 });
 
 // Get email processing statistics for a user
-app.get('/api/email-guests/stats/:userId', async (req, res) => {
+app.get('/api/email-guests/stats/:userId', authenticateUser, async (req, res) => {
   try {
     const { userId } = req.params;
+
+    // Security: Users can only access their own stats unless they're Security
+    if (req.user.id !== userId && req.profile.organization !== 'Security') {
+      return res.status(403).json({ 
+        error: 'Forbidden: Access denied to this user data' 
+      });
+    }
 
     if (!userId) {
       return res.status(400).json({ error: 'User ID required' });

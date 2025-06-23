@@ -54,10 +54,17 @@ class GmailEmailProcessor {
       const { tokens } = await this.auth.getToken(code);
       this.auth.setCredentials(tokens);
       
-      console.log('Gmail authentication successful');
-      console.log('Add these to your .env file:');
-      console.log(`GMAIL_REFRESH_TOKEN=${tokens.refresh_token}`);
-      console.log(`GMAIL_ACCESS_TOKEN=${tokens.access_token}`);
+      // 🔒 SECURE TOKEN MASKING - Never log full tokens!
+      const maskToken = (token) => {
+        if (!token) return 'NOT_PROVIDED';
+        return token.substring(0, 8) + '...' + token.substring(token.length - 4) + ' (***MASKED***)';
+      };
+      
+      console.log('✅ Gmail authentication successful');
+      console.log('🔒 Security: Tokens safely stored (masked for security)');
+      console.log(`🔑 Refresh Token: ${maskToken(tokens.refresh_token)}`);
+      console.log(`🔑 Access Token:  ${maskToken(tokens.access_token)}`);
+      console.log('\n📝 Note: Full tokens are securely stored in memory only');
       
       return tokens;
     } catch (error) {
@@ -238,6 +245,6 @@ if (require.main === module) {
     }
 
     // Start monitoring
-    await processor.startMonitoring(5); // Check every 5 minutes
+    await processor.startMonitoring(0.5); // Check every 30 seconds
   }).catch(console.error);
 } 

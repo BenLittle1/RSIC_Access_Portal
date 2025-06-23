@@ -202,42 +202,50 @@ function extractEmailAddress(emailString) {
 }
 
 /**
- * Verify that email sender is a registered user
+ * Verify that email sender is a registered, approved user
  */
 async function verifySenderEmail(senderEmail) {
   try {
     // Extract just the email address from the sender string
     const cleanEmail = extractEmailAddress(senderEmail);
     
+    console.log(`🔍 Verifying sender: ${cleanEmail}`);
+    
+    // Check if user exists and is approved
     const { data: profile, error } = await supabase
       .from('profiles')
-      .select('user_id, full_name, organization, email_processing_enabled, max_daily_email_processing')
+      .select('user_id, full_name, organization, authentication_status, email')
       .eq('email', cleanEmail)
-      .eq('authentication_status', 'Approved')
       .single();
 
     if (error || !profile) {
+      console.log(`❌ Sender verification failed: Email ${cleanEmail} not found in system`);
       return {
         valid: false,
-        error: 'Email not found or user not approved'
+        error: `Unauthorized sender: ${cleanEmail} is not a registered user`
       };
     }
 
-    if (!profile.email_processing_enabled) {
+    // Check if user is approved
+    if (profile.authentication_status !== 'Approved') {
+      console.log(`❌ Sender verification failed: User ${cleanEmail} has status: ${profile.authentication_status}`);
       return {
         valid: false,
-        error: 'Email processing disabled for this user'
+        error: `Access denied: User account not approved (status: ${profile.authentication_status})`
       };
     }
 
+    console.log(`✅ Sender verified: ${profile.full_name} (${profile.organization})`);
+    
     return {
       valid: true,
       user: profile
     };
   } catch (error) {
+    console.error(`❌ Database error during sender verification:`, error);
     return {
       valid: false,
-      error: `Database error: ${error.message}`
+      error: `System error: Unable to verify sender`
     };
   }
 }
@@ -322,6 +330,13 @@ async function processIncomingEmail(senderEmail, emailSubject, emailContent) {
   };
 
   try {
+    // Skip processing arrival notification emails (they're not guest requests)
+    if (emailSubject && emailSubject.toLowerCase().includes('guest arrival notification')) {
+      result.message = 'Skipped: Arrival notification email (not a guest request)';
+      result.success = true;
+      return result;
+    }
+
     // 1. Verify sender
     const senderCheck = await verifySenderEmail(senderEmail);
     if (!senderCheck.valid) {
@@ -332,13 +347,17 @@ async function processIncomingEmail(senderEmail, emailSubject, emailContent) {
 
     const userData = senderCheck.user;
 
-    // 2. Check processing limits
-    const limitCheck = await checkProcessingLimits(userData.user_id, userData.max_daily_email_processing);
+    // 2. Check processing limits (higher limit for Security users)
+    const defaultDailyLimit = userData.organization === 'Security' ? 50 : 10;
+    const limitCheck = await checkProcessingLimits(userData.user_id, defaultDailyLimit);
     if (!limitCheck.canProcess) {
+      console.log(`❌ Daily limit exceeded for user ${userData.email}: ${limitCheck.currentCount}/${limitCheck.dailyLimit}`);
       result.errors.push(limitCheck.error || 'Daily processing limit exceeded');
       result.message = `Daily limit reached (${limitCheck.currentCount}/${limitCheck.dailyLimit})`;
       return result;
     }
+    
+    console.log(`📊 Processing limits: ${limitCheck.currentCount}/${limitCheck.dailyLimit} used today`);
 
     // 3. Extract guest data using Gemini AI
     const extractedData = await extractGuestDataFromEmail(emailContent, senderEmail);

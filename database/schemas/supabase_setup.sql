@@ -68,18 +68,13 @@ FOR ALL
 USING (auth.uid() = user_id)
 WITH CHECK (auth.uid() = user_id);
 
--- 8. RLS Policy: Security can view all profiles
-CREATE POLICY "Security can view all profiles"
+-- 8. RLS Policy: Allow authenticated users to read profiles for organization checks
+-- This is needed for the guests table policies to work
+CREATE POLICY "Allow profile lookup for organization checks"
 ON public.profiles
 FOR SELECT
-USING (
-  EXISTS (
-    SELECT 1
-    FROM public.profiles p
-    WHERE p.user_id = auth.uid() 
-    AND p.organization = 'Security'
-  )
-);
+TO authenticated
+USING (true);
 
 -- 9. Grant necessary permissions
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
@@ -152,4 +147,45 @@ WITH CHECK (
 );
 
 -- 15. Grant permissions on guests table
-GRANT ALL ON public.guests TO anon, authenticated; 
+GRANT ALL ON public.guests TO anon, authenticated;
+
+-- 16. Additional policies for Security organization administrative access
+-- Allow Security users to manage all profiles
+CREATE POLICY "Security users can manage all profiles"
+ON public.profiles
+FOR ALL
+TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM auth.users u
+    WHERE u.id = auth.uid()
+    AND u.raw_user_meta_data->>'organization' = 'Security'
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM auth.users u
+    WHERE u.id = auth.uid()
+    AND u.raw_user_meta_data->>'organization' = 'Security'
+  )
+);
+
+-- 17. Allow Security users to manage all guests
+CREATE POLICY "Security users can manage all guests"
+ON public.guests
+FOR ALL
+TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM auth.users u
+    WHERE u.id = auth.uid()
+    AND u.raw_user_meta_data->>'organization' = 'Security'
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM auth.users u
+    WHERE u.id = auth.uid()
+    AND u.raw_user_meta_data->>'organization' = 'Security'
+  )
+); 

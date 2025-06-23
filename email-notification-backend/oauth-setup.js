@@ -67,13 +67,54 @@ async function exchangeCode(authCode) {
 
     const { tokens } = await auth.getToken(authCode);
     
+    // 🔒 SECURE TOKEN MASKING - Never log full tokens!
+    const maskToken = (token) => {
+      if (!token) return 'NOT_PROVIDED';
+      return token.substring(0, 8) + '...' + token.substring(token.length - 4) + ' (***MASKED***)';
+    };
+
     console.log('\n✅ Authorization successful!');
-    console.log('Add these lines to your .env file:');
+    console.log('🔒 Security: Tokens generated and masked for safety');
     console.log('=====================================');
-    console.log(`GMAIL_REFRESH_TOKEN=${tokens.refresh_token}`);
-    console.log(`GMAIL_ACCESS_TOKEN=${tokens.access_token}`);
+    console.log(`🔑 Refresh Token: ${maskToken(tokens.refresh_token)}`);
+    console.log(`🔑 Access Token:  ${maskToken(tokens.access_token)}`);
     console.log('=====================================');
-    console.log('\nAfter updating .env, you can run: node gmail-integration.js');
+    
+    // Write tokens to temporary secure file instead of terminal
+    const fs = require('fs');
+    const path = require('path');
+    const tokenFile = path.join(__dirname, '.oauth_tokens_temp.txt');
+    
+    const tokenContent = `# OAuth Tokens - DELETE THIS FILE AFTER COPYING TO .env
+# Generated: ${new Date().toISOString()}
+GMAIL_REFRESH_TOKEN=${tokens.refresh_token}
+GMAIL_ACCESS_TOKEN=${tokens.access_token}
+
+# SECURITY WARNING: Delete this file immediately after copying to .env!
+# Do not commit this file to version control!
+`;
+
+    fs.writeFileSync(tokenFile, tokenContent, { mode: 0o600 }); // Read-only for owner
+    
+    console.log('\n🔐 SECURE TOKEN STORAGE:');
+    console.log(`📁 Tokens written to: ${tokenFile}`);
+    console.log('📝 Steps:');
+    console.log('1. Copy tokens from the file to your .env');
+    console.log('2. DELETE the temporary file immediately');
+    console.log('3. Run: node gmail-integration.js');
+    console.log('\n⚠️  SECURITY: Temporary file will auto-delete in 5 minutes for safety');
+    
+    // Auto-delete the file after 5 minutes for security
+    setTimeout(() => {
+      try {
+        if (fs.existsSync(tokenFile)) {
+          fs.unlinkSync(tokenFile);
+          console.log('🔒 Security: Temporary token file auto-deleted');
+        }
+      } catch (error) {
+        console.error('Warning: Could not auto-delete token file:', error.message);
+      }
+    }, 5 * 60 * 1000); // 5 minutes
     
   } catch (error) {
     console.error('Token exchange error:', error.message);

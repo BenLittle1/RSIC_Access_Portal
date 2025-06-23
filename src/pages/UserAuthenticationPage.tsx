@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { ORGANIZATIONS } from '../utils/constants'
+import { authenticatedFetch } from '../utils/api'
 
 interface Profile {
   id: string
@@ -31,14 +32,35 @@ const UserAuthenticationPage = () => {
     checkUserAndLoadProfiles()
   }, [])
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (passwordInput === 'AXL') {
-      setIsPasswordProtected(false)
-      setPasswordError('')
-    } else {
-      setPasswordError('Incorrect password')
+    setUpdating('password-verification')
+    
+    try {
+      const response = await authenticatedFetch('/verify-admin', {
+        method: 'POST',
+        body: JSON.stringify({ password: passwordInput })
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        if (data.verified) {
+          setIsPasswordProtected(false)
+          setPasswordError('')
+        } else {
+          setPasswordError('Access denied')
+          setPasswordInput('')
+        }
+      } else {
+        setPasswordError('Access denied')
+        setPasswordInput('')
+      }
+    } catch (error) {
+      console.error('Admin verification failed:', error)
+      setPasswordError('Verification failed - please try again')
       setPasswordInput('')
+    } finally {
+      setUpdating(null)
     }
   }
 
@@ -207,9 +229,10 @@ const UserAuthenticationPage = () => {
             <div className="flex space-x-4">
               <button
                 type="submit"
-                className="flex-1 bg-black text-white py-2 px-4 hover:bg-gray-800 transition-colors"
+                disabled={updating === 'password-verification'}
+                className="flex-1 bg-black text-white py-2 px-4 hover:bg-gray-800 disabled:bg-gray-400 transition-colors"
               >
-                Access Page
+                {updating === 'password-verification' ? 'Verifying...' : 'Access Page'}
               </button>
               <button
                 type="button"
