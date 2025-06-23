@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import GuestList from '../components/GuestList'
 import CalendarView from '../components/CalendarView'
 import AddGuestModal from '../components/AddGuestModal'
+import DashboardMetrics from '../components/DashboardMetrics'
 import { EMAIL_API_URL } from '../utils/constants'
 
 interface Profile {
@@ -35,7 +36,10 @@ const DashboardPage = () => {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
   const [guests, setGuests] = useState<Guest[]>([])
   const [loading, setLoading] = useState(true)
+  const [guestsLoading, setGuestsLoading] = useState(false)
   const [showAddGuestModal, setShowAddGuestModal] = useState(false)
+  const [showMetricsModal, setShowMetricsModal] = useState(false)
+  const [profileCache, setProfileCache] = useState<Record<string, string>>({})
 
   useEffect(() => {
     checkUser()
@@ -105,51 +109,101 @@ const DashboardPage = () => {
   const fetchGuests = async () => {
     if (!profile) return
 
+    setGuestsLoading(true)
     const dateString = selectedDate.toISOString().split('T')[0]
     console.log('🔍 Fetching guests for date:', dateString)
     console.log('🔍 User profile organization:', profile.organization)
     
-    // Query guests with organization filtering (no RLS)
-    let query = supabase
-      .from('guests')
-      .select('*')
-      .eq('visit_date', dateString)
-    
-    // Apply organization filtering in the application
-    if (profile.organization !== 'Security') {
-      // Non-security users can only see guests for their organization
-      query = query.eq('organization', profile.organization)
-    }
-    // Security users see all guests (no additional filter)
-    
-    const { data, error } = await query.order('estimated_arrival')
-
-    if (error) {
-      console.error('❌ Error fetching guests:', error)
-    } else {
-      console.log('✅ Raw guest data:', data)
-      console.log('🔍 Guest organizations found:', data?.map(g => g.organization))
+    try {
+      // Single optimized query with JOIN to get guests and inviter names in one go
+      let query = supabase
+        .from('guests')
+        .select(`
+          *,
+          profiles!guests_inviter_id_fkey (
+            full_name
+          )
+        `)
+        .eq('visit_date', dateString)
       
-      // Get inviter names for each guest
-      const transformedGuests = await Promise.all(
-        (data || []).map(async (guest) => {
-          // Get the inviter's profile
-          const { data: inviterProfile } = await supabase
-            .from('profiles')
-            .select('full_name')
-            .eq('user_id', guest.inviter_id)
-            .single()
-          
-          return {
-            ...guest,
-            inviter_name: inviterProfile?.full_name || 'Unknown'
+      // Apply organization filtering in the application
+      if (profile.organization !== 'Security') {
+        // Non-security users can only see guests for their organization
+        query = query.eq('organization', profile.organization)
+      }
+      // Security users see all guests (no additional filter)
+      
+      const { data, error } = await query.order('estimated_arrival')
+
+      if (error) {
+        console.error('❌ Error fetching guests:', error)
+        
+        // Fallback to the old method if JOIN fails
+        const fallbackQuery = supabase
+          .from('guests')
+          .select('*')
+          .eq('visit_date', dateString)
+        
+        if (profile.organization !== 'Security') {
+          fallbackQuery.eq('organization', profile.organization)
+        }
+        
+        const { data: fallbackData, error: fallbackError } = await fallbackQuery.order('estimated_arrival')
+        
+        if (fallbackError) {
+          console.error('❌ Fallback query also failed:', fallbackError)
+          setGuestsLoading(false)
+          return
+        }
+        
+        // Use cached profile data for faster loading
+        const transformedGuests = await Promise.all(
+          (fallbackData || []).map(async (guest) => {
+            let inviterName = profileCache[guest.inviter_id]
+            
+            if (!inviterName) {
+              const { data: inviterProfile } = await supabase
+                .from('profiles')
+                .select('full_name')
+                .eq('user_id', guest.inviter_id)
+                .single()
+              
+              inviterName = inviterProfile?.full_name || 'Unknown'
+              setProfileCache(prev => ({ ...prev, [guest.inviter_id]: inviterName }))
+            }
+            
+            return {
+              ...guest,
+              inviter_name: inviterName
+            }
+          })
+        )
+        
+        setGuests(transformedGuests)
+      } else {
+        console.log('✅ Raw guest data with profiles:', data)
+        
+        // Transform the JOIN result
+        const transformedGuests = (data || []).map(guest => ({
+          ...guest,
+          inviter_name: guest.profiles?.full_name || 'Unknown'
+        }))
+        
+        // Cache profile data for future use
+        (data || []).forEach(guest => {
+          if (guest.profiles?.full_name) {
+            setProfileCache(prev => ({ ...prev, [guest.inviter_id]: guest.profiles.full_name }))
           }
         })
-      )
-      
-      console.log('✅ Transformed guests:', transformedGuests)
-      setGuests(transformedGuests)
+        
+        console.log('✅ Transformed guests:', transformedGuests)
+        setGuests(transformedGuests)
+      }
+    } catch (err) {
+      console.error('💥 Unexpected error in fetchGuests:', err)
     }
+    
+    setGuestsLoading(false)
   }
 
   const handleLogout = async () => {
@@ -158,46 +212,66 @@ const DashboardPage = () => {
   }
 
   const updateGuestArrivalStatus = async (guestId: string, arrivalStatus: boolean) => {
-    const { error } = await supabase
-      .from('guests')
-      .update({ arrival_status: arrivalStatus })
-      .eq('id', guestId)
+    // Optimistic update - Update UI immediately
+    setGuests(prevGuests => prevGuests.map(guest => 
+      guest.id === guestId 
+        ? { ...guest, arrival_status: arrivalStatus }
+        : guest
+    ))
 
-    if (error) {
-      console.error('Error updating arrival status:', error)
-    } else {
-      // Update local state
-      setGuests(guests.map(guest => 
+    // Background database update
+    try {
+      const { error } = await supabase
+        .from('guests')
+        .update({ arrival_status: arrivalStatus })
+        .eq('id', guestId)
+
+      if (error) {
+        console.error('Error updating arrival status:', error)
+        // Revert optimistic update on error
+        setGuests(prevGuests => prevGuests.map(guest => 
+          guest.id === guestId 
+            ? { ...guest, arrival_status: !arrivalStatus }
+            : guest
+        ))
+        return
+      }
+
+      // Send email notification when guest arrives (non-blocking)
+      if (arrivalStatus) {
+        // Run email notification in background without blocking UI
+        fetch(`${EMAIL_API_URL}/notify-arrival`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            guestId,
+            arrivalStatus
+          })
+        })
+        .then(response => {
+          if (response.ok) {
+            return response.json()
+          } else {
+            throw new Error('Email notification failed')
+          }
+        })
+        .then(result => {
+          console.log('✅ Email notification sent successfully:', result)
+        })
+        .catch(emailError => {
+          console.error('❌ Error sending email notification:', emailError)
+        })
+      }
+    } catch (error) {
+      console.error('❌ Unexpected error updating arrival status:', error)
+      // Revert optimistic update
+      setGuests(prevGuests => prevGuests.map(guest => 
         guest.id === guestId 
-          ? { ...guest, arrival_status: arrivalStatus }
+          ? { ...guest, arrival_status: !arrivalStatus }
           : guest
       ))
-
-      // Send email notification when guest arrives
-      if (arrivalStatus) {
-        try {
-          const response = await fetch(`${EMAIL_API_URL}/notify-arrival`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              guestId,
-              arrivalStatus
-            })
-          })
-
-          if (response.ok) {
-            const result = await response.json()
-            console.log('✅ Email notification sent successfully:', result)
-          } else {
-            const errorData = await response.json()
-            console.error('❌ Failed to send email notification:', errorData)
-          }
-        } catch (emailError) {
-          console.error('❌ Error sending email notification:', emailError)
-        }
-      }
     }
   }
 
@@ -294,7 +368,9 @@ const DashboardPage = () => {
             guests={guests}
             isSecurityUser={isSecurityUser}
             onShowAddGuest={() => setShowAddGuestModal(true)}
+            onShowMetrics={() => setShowMetricsModal(true)}
             onUpdateArrivalStatus={updateGuestArrivalStatus}
+            isLoading={guestsLoading}
           />
         </div>
 
@@ -317,6 +393,15 @@ const DashboardPage = () => {
           onAddGuest={addGuest}
         />
       )}
+
+      {/* Dashboard Metrics Modal */}
+      <DashboardMetrics
+        isSecurityUser={isSecurityUser}
+        userOrganization={profile.organization}
+        selectedDate={selectedDate}
+        isOpen={showMetricsModal}
+        onClose={() => setShowMetricsModal(false)}
+      />
     </div>
   )
 }

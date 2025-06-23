@@ -19,7 +19,9 @@ interface GuestListProps {
   guests: Guest[]
   isSecurityUser: boolean
   onShowAddGuest: () => void
+  onShowMetrics: () => void
   onUpdateArrivalStatus: (guestId: string, status: boolean) => void
+  isLoading?: boolean
 }
 
 const GuestList = ({ 
@@ -28,7 +30,9 @@ const GuestList = ({
   guests, 
   isSecurityUser, 
   onShowAddGuest, 
-  onUpdateArrivalStatus 
+  onShowMetrics,
+  onUpdateArrivalStatus,
+  isLoading = false
 }: GuestListProps) => {
   const formatTime = (timeString: string) => {
     return new Date(`1970-01-01T${timeString}`).toLocaleTimeString('en-US', {
@@ -88,18 +92,33 @@ const GuestList = ({
             </div>
           </div>
 
-          <button
-            onClick={onShowAddGuest}
-            className="px-4 py-2 bg-black text-white hover:bg-gray-800 transition-colors font-medium flex-shrink-0"
-          >
-            Add Guest
-          </button>
+          <div className="flex space-x-3">
+            <button
+              onClick={onShowMetrics}
+              className="px-4 py-2 bg-white text-black border border-black hover:bg-gray-100 transition-colors font-medium flex-shrink-0"
+            >
+              View Metrics
+            </button>
+            <button
+              onClick={onShowAddGuest}
+              className="px-4 py-2 bg-black text-white hover:bg-gray-800 transition-colors font-medium flex-shrink-0"
+            >
+              Add Guest
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Guest Table */}
       <div className="flex-1 overflow-auto">
-        {guests.length === 0 ? (
+        {isLoading ? (
+          <div className="flex items-center justify-center h-full text-gray-500">
+            <div className="text-center">
+              <div className="w-8 h-8 mx-auto mb-4 border-4 border-gray-300 border-t-black rounded-full animate-spin"></div>
+              <p className="text-lg">Loading guests...</p>
+            </div>
+          </div>
+        ) : guests.length === 0 ? (
           <div className="flex items-center justify-center h-full text-gray-500">
             <div className="text-center">
               <p className="text-lg">No guests scheduled for this date</p>
@@ -132,8 +151,10 @@ const GuestList = ({
                       <input
                         type="checkbox"
                         checked={guest.arrival_status}
-                        onChange={(e) => onUpdateArrivalStatus(guest.id, e.target.checked)}
-                        className="w-4 h-4 text-black bg-white border-2 border-black rounded focus:ring-black focus:ring-2 accent-black"
+                        onChange={isSecurityUser ? (e) => onUpdateArrivalStatus(guest.id, e.target.checked) : undefined}
+                        className={`w-4 h-4 text-black bg-white border-2 border-black rounded focus:ring-black focus:ring-2 accent-black ${
+                          !isSecurityUser ? 'pointer-events-none cursor-not-allowed' : ''
+                        }`}
                       />
                     </div>
                   </td>

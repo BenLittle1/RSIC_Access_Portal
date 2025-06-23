@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import GuestList from '../components/GuestList'
 import CalendarView from '../components/CalendarView'
 import AddGuestModal from '../components/AddGuestModal'
+import DashboardMetrics from '../components/DashboardMetrics'
 
 interface Profile {
   id: string
@@ -35,6 +36,7 @@ const DashboardPage = () => {
   const [guests, setGuests] = useState<Guest[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddGuestModal, setShowAddGuestModal] = useState(false)
+  const [showMetricsModal, setShowMetricsModal] = useState(false)
 
   useEffect(() => {
     checkUser()
@@ -157,21 +159,36 @@ const DashboardPage = () => {
   }
 
   const updateGuestArrivalStatus = async (guestId: string, arrivalStatus: boolean) => {
-    const { error } = await supabase
-      .from('guests')
-      .update({ arrival_status: arrivalStatus })
-      .eq('id', guestId)
+    // Optimistic update - Update UI immediately
+    setGuests(prevGuests => prevGuests.map(guest => 
+      guest.id === guestId 
+        ? { ...guest, arrival_status: arrivalStatus }
+        : guest
+    ))
 
-    if (error) {
-      console.error('Error updating arrival status:', error)
-      return
-    }
+    // Background database update
+    try {
+      const { error } = await supabase
+        .from('guests')
+        .update({ arrival_status: arrivalStatus })
+        .eq('id', guestId)
 
-    // Send email notification when guest arrives
-    if (arrivalStatus) {
-      try {
+      if (error) {
+        console.error('Error updating arrival status:', error)
+        // Revert optimistic update on error
+        setGuests(prevGuests => prevGuests.map(guest => 
+          guest.id === guestId 
+            ? { ...guest, arrival_status: !arrivalStatus }
+            : guest
+        ))
+        return
+      }
+
+      // Send email notification when guest arrives (non-blocking)
+      if (arrivalStatus) {
+        // Run email notification in background without blocking UI
         const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
-        const response = await fetch(`${backendUrl}/api/notify-arrival`, {
+        fetch(`${backendUrl}/api/notify-arrival`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -181,26 +198,30 @@ const DashboardPage = () => {
             arrivalStatus
           })
         })
-
-        if (response.ok) {
-          const result = await response.json()
+        .then(response => {
+          if (response.ok) {
+            return response.json()
+          } else {
+            throw new Error('Email notification failed')
+          }
+        })
+        .then(result => {
           console.log('✅ Email notification sent:', result.message)
-        } else {
-          const errorData = await response.json()
-          console.error('❌ Email notification failed:', errorData.error)
-        }
-      } catch (error) {
-        console.error('❌ Error sending email notification:', error)
-        // Don't fail the status update if email fails - this is non-critical
+        })
+        .catch(error => {
+          console.error('❌ Error sending email notification:', error)
+          // Don't fail the status update if email fails - this is non-critical
+        })
       }
+    } catch (error) {
+      console.error('❌ Unexpected error updating arrival status:', error)
+      // Revert optimistic update
+      setGuests(prevGuests => prevGuests.map(guest => 
+        guest.id === guestId 
+          ? { ...guest, arrival_status: !arrivalStatus }
+          : guest
+      ))
     }
-
-    // Update local state
-    setGuests(guests.map(guest => 
-      guest.id === guestId 
-        ? { ...guest, arrival_status: arrivalStatus }
-        : guest
-    ))
   }
 
   const addGuest = async (guestData: Omit<Guest, 'id' | 'inviter_name'>) => {
@@ -294,6 +315,7 @@ const DashboardPage = () => {
             guests={guests}
             isSecurityUser={isSecurityUser}
             onShowAddGuest={() => setShowAddGuestModal(true)}
+            onShowMetrics={() => setShowMetricsModal(true)}
             onUpdateArrivalStatus={updateGuestArrivalStatus}
           />
         </div>
@@ -317,6 +339,15 @@ const DashboardPage = () => {
           onAddGuest={addGuest}
         />
       )}
+
+      {/* Dashboard Metrics Modal */}
+      <DashboardMetrics
+        isSecurityUser={isSecurityUser}
+        userOrganization={profile.organization}
+        selectedDate={selectedDate}
+        isOpen={showMetricsModal}
+        onClose={() => setShowMetricsModal(false)}
+      />
     </div>
   )
 }
