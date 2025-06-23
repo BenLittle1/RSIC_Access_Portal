@@ -5,6 +5,7 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const nodemailer = require('nodemailer');
 const { createClient } = require('@supabase/supabase-js');
+const emailProcessor = require('./emailProcessor');
 require('dotenv').config();
 
 const app = express();
@@ -306,6 +307,282 @@ app.post('/api/notify-arrival', async (req, res) => {
     console.error('Error sending arrival notification:', error);
     res.status(500).json({ 
       error: 'Failed to send notification',
+      details: error.message 
+    });
+  }
+});
+
+// Email Processing API Routes
+
+// Webhook endpoint for incoming emails (from email service providers)
+app.post('/api/process-email', async (req, res) => {
+  try {
+    const { from, subject, text, html } = req.body;
+    
+    // Use text content if available, otherwise HTML
+    const emailContent = text || html || '';
+    
+    if (!from || !emailContent) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: from, and email content' 
+      });
+    }
+
+    console.log(`📧 Processing email from: ${from}, subject: ${subject}`);
+
+    // Process the email using our email processor
+    const result = await emailProcessor.processIncomingEmail(from, subject, emailContent);
+
+    if (result.success) {
+      console.log(`✅ Email processed successfully for ${from}:`, result.message);
+      res.status(200).json({
+        success: true,
+        message: result.message,
+        data: result.data
+      });
+    } else {
+      console.log(`❌ Email processing failed for ${from}:`, result.message);
+      res.status(400).json({
+        success: false,
+        message: result.message,
+        errors: result.errors
+      });
+    }
+
+  } catch (error) {
+    console.error('Error in email processing endpoint:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: error.message 
+    });
+  }
+});
+
+// Get pending email-processed guests for a user
+app.get('/api/email-guests/pending/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID required' });
+    }
+
+    const { data, error } = await supabase
+      .from('email_processed_guests')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('processing_status', 'pending')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    res.json({
+      success: true,
+      pending_guests: data || [],
+      count: data ? data.length : 0
+    });
+
+  } catch (error) {
+    console.error('Error fetching pending email guests:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch pending guests',
+      details: error.message 
+    });
+  }
+});
+
+// Approve an email-processed guest and create actual guest record
+app.post('/api/email-guests/approve/:recordId', async (req, res) => {
+  try {
+    const { recordId } = req.params;
+    const { guestData, userId } = req.body;
+
+    if (!recordId || !guestData || !userId) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: recordId, guestData, userId' 
+      });
+    }
+
+    // Get the email record
+    const { data: emailRecord, error: fetchError } = await supabase
+      .from('email_processed_guests')
+      .select('*')
+      .eq('id', recordId)
+      .eq('user_id', userId)
+      .single();
+
+    if (fetchError || !emailRecord) {
+      return res.status(404).json({ error: 'Email record not found' });
+    }
+
+    if (emailRecord.processing_status !== 'pending') {
+      return res.status(400).json({ error: 'Record already processed' });
+    }
+
+    // Create the guest record
+    const { data: newGuest, error: guestError } = await supabase
+      .from('guests')
+      .insert({
+        name: guestData.name,
+        visit_date: guestData.visit_date,
+        estimated_arrival: guestData.estimated_arrival,
+        arrival_status: false,
+        floor_access: guestData.floor_access,
+        inviter_id: userId,
+        organization: guestData.organization,
+        requester_email: emailRecord.sender_email
+      })
+      .select()
+      .single();
+
+    if (guestError) {
+      throw guestError;
+    }
+
+    // Update email record status
+    const { error: updateError } = await supabase
+      .from('email_processed_guests')
+      .update({ 
+        processing_status: 'approved',
+        guest_id: newGuest.id
+      })
+      .eq('id', recordId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    res.json({
+      success: true,
+      message: 'Guest approved and created successfully',
+      guest: newGuest
+    });
+
+  } catch (error) {
+    console.error('Error approving email guest:', error);
+    res.status(500).json({ 
+      error: 'Failed to approve guest',
+      details: error.message 
+    });
+  }
+});
+
+// Reject an email-processed guest
+app.post('/api/email-guests/reject/:recordId', async (req, res) => {
+  try {
+    const { recordId } = req.params;
+    const { userId, reason } = req.body;
+
+    if (!recordId || !userId) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: recordId, userId' 
+      });
+    }
+
+    // Update email record status
+    const { error } = await supabase
+      .from('email_processed_guests')
+      .update({ 
+        processing_status: 'rejected',
+        rejected_reason: reason || 'Rejected by user'
+      })
+      .eq('id', recordId)
+      .eq('user_id', userId);
+
+    if (error) {
+      throw error;
+    }
+
+    res.json({
+      success: true,
+      message: 'Guest request rejected'
+    });
+
+  } catch (error) {
+    console.error('Error rejecting email guest:', error);
+    res.status(500).json({ 
+      error: 'Failed to reject guest',
+      details: error.message 
+    });
+  }
+});
+
+// Get email processing statistics for a user
+app.get('/api/email-guests/stats/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID required' });
+    }
+
+    const { data, error } = await supabase
+      .from('email_processing_stats')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (error) {
+      // If no stats found, return zeros
+      if (error.code === 'PGRST116') {
+        return res.json({
+          success: true,
+          stats: {
+            total_emails_processed: 0,
+            pending_count: 0,
+            approved_count: 0,
+            rejected_count: 0,
+            error_count: 0,
+            avg_confidence_score: 0,
+            last_email_processed: null
+          }
+        });
+      }
+      throw error;
+    }
+
+    res.json({
+      success: true,
+      stats: data
+    });
+
+  } catch (error) {
+    console.error('Error fetching email processing stats:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch stats',
+      details: error.message 
+    });
+  }
+});
+
+// Test endpoint for email processing (for development/testing)
+app.post('/api/test-email-processing', async (req, res) => {
+  try {
+    const { senderEmail, subject, content } = req.body;
+
+    if (!senderEmail || !content) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: senderEmail, content' 
+      });
+    }
+
+    const result = await emailProcessor.processIncomingEmail(
+      senderEmail, 
+      subject || 'Test Email', 
+      content
+    );
+
+    res.json({
+      success: true,
+      result: result
+    });
+
+  } catch (error) {
+    console.error('Error in test email processing:', error);
+    res.status(500).json({ 
+      error: 'Test processing failed',
       details: error.message 
     });
   }

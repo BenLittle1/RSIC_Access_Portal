@@ -115,15 +115,10 @@ const DashboardPage = () => {
     console.log('🔍 User profile organization:', profile.organization)
     
     try {
-      // Single optimized query with JOIN to get guests and inviter names in one go
+      // Query guests first, then get inviter names separately
       let query = supabase
         .from('guests')
-        .select(`
-          *,
-          profiles!guests_inviter_id_fkey (
-            full_name
-          )
-        `)
+        .select('*')
         .eq('visit_date', dateString)
       
       // Apply organization filtering in the application
@@ -137,68 +132,37 @@ const DashboardPage = () => {
 
       if (error) {
         console.error('❌ Error fetching guests:', error)
-        
-        // Fallback to the old method if JOIN fails
-        const fallbackQuery = supabase
-          .from('guests')
-          .select('*')
-          .eq('visit_date', dateString)
-        
-        if (profile.organization !== 'Security') {
-          fallbackQuery.eq('organization', profile.organization)
-        }
-        
-        const { data: fallbackData, error: fallbackError } = await fallbackQuery.order('estimated_arrival')
-        
-        if (fallbackError) {
-          console.error('❌ Fallback query also failed:', fallbackError)
-          setGuestsLoading(false)
-          return
-        }
-        
-        // Use cached profile data for faster loading
-        const transformedGuests = await Promise.all(
-          (fallbackData || []).map(async (guest) => {
-            let inviterName = profileCache[guest.inviter_id]
+        setGuestsLoading(false)
+        return
+      }
+      
+      console.log('✅ Raw guest data:', data)
+      
+      // Use cached profile data for faster loading
+      const transformedGuests = await Promise.all(
+        (data || []).map(async (guest) => {
+          let inviterName = profileCache[guest.inviter_id]
+          
+          if (!inviterName) {
+            const { data: inviterProfile } = await supabase
+              .from('profiles')
+              .select('full_name')
+              .eq('user_id', guest.inviter_id)
+              .single()
             
-            if (!inviterName) {
-              const { data: inviterProfile } = await supabase
-                .from('profiles')
-                .select('full_name')
-                .eq('user_id', guest.inviter_id)
-                .single()
-              
-              inviterName = inviterProfile?.full_name || 'Unknown'
-              setProfileCache(prev => ({ ...prev, [guest.inviter_id]: inviterName }))
-            }
-            
-            return {
-              ...guest,
-              inviter_name: inviterName
-            }
-          })
-        )
-        
-        setGuests(transformedGuests)
-      } else {
-        console.log('✅ Raw guest data with profiles:', data)
-        
-        // Transform the JOIN result
-        const transformedGuests = (data || []).map(guest => ({
-          ...guest,
-          inviter_name: guest.profiles?.full_name || 'Unknown'
-        }))
-        
-        // Cache profile data for future use
-        (data || []).forEach(guest => {
-          if (guest.profiles?.full_name) {
-            setProfileCache(prev => ({ ...prev, [guest.inviter_id]: guest.profiles.full_name }))
+            inviterName = inviterProfile?.full_name || 'Unknown'
+            setProfileCache(prev => ({ ...prev, [guest.inviter_id]: inviterName }))
+          }
+          
+          return {
+            ...guest,
+            inviter_name: inviterName
           }
         })
-        
-        console.log('✅ Transformed guests:', transformedGuests)
-        setGuests(transformedGuests)
-      }
+      )
+      
+      console.log('✅ Transformed guests:', transformedGuests)
+      setGuests(transformedGuests)
     } catch (err) {
       console.error('💥 Unexpected error in fetchGuests:', err)
     }
