@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { format, startOfDay, endOfDay, subDays, startOfWeek, endOfWeek } from 'date-fns'
+import { format, startOfDay, subDays, startOfWeek, endOfWeek } from 'date-fns'
 
 interface MetricsData {
   currentVisitors: number
