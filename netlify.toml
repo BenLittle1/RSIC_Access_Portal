@@ -1,0 +1,15 @@
+[build]
+  publish = "dist"
+  command = "npm run build"
+  
+[build.environment]
+  NODE_VERSION = "20.19.3"
+  NPM_VERSION = "10.9.0"
+  
+# Build processing settings
+[build.processing]
+  skip_processing = false
+
+# Build timeout (30 minutes)
+[build]
+  command_timeout = 1800 
