@@ -12,7 +12,7 @@ export default function AuthWrapper({ children }: AuthWrapperProps) {
     const handleAuthError = async () => {
       try {
         // Try to get the current session
-        const { data: { session }, error } = await supabase.auth.getSession()
+        const { data: { session: _ }, error } = await supabase.auth.getSession()
         
         if (error) {
           console.warn('Auth error detected, clearing storage:', error.message)
@@ -43,7 +43,7 @@ export default function AuthWrapper({ children }: AuthWrapperProps) {
 
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (event, _session) => {
         if (event === 'TOKEN_REFRESHED') {
           console.log('Token refreshed successfully')
         } else if (event === 'SIGNED_OUT') {

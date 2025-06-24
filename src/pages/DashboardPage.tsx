@@ -5,7 +5,7 @@ import GuestList from '../components/GuestList'
 import CalendarView from '../components/CalendarView'
 import AddGuestModal from '../components/AddGuestModal'
 import DashboardMetrics from '../components/DashboardMetrics'
-import { EMAIL_API_URL } from '../utils/constants'
+// import { EMAIL_API_URL } from '../utils/constants'
 import { notifyGuestArrival } from '../utils/api'
 
 interface Profile {

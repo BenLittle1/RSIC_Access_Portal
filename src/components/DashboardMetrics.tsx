@@ -52,7 +52,7 @@ const DashboardMetrics = ({ isSecurityUser, userOrganization, selectedDate, isOp
     try {
       setLoading(true)
       const today = startOfDay(selectedDate)
-      const todayEnd = endOfDay(selectedDate)
+      // const todayEnd = endOfDay(selectedDate)
       const weekStart = startOfWeek(selectedDate)
       const weekEnd = endOfWeek(selectedDate)
 
@@ -81,13 +81,13 @@ const DashboardMetrics = ({ isSecurityUser, userOrganization, selectedDate, isOp
           .eq('visit_date', format(today, 'yyyy-MM-dd'))
       )
 
-      const todayArrivals = todayGuests?.filter(g => g.arrival_status).length || 0
-      const todayPending = todayGuests?.filter(g => !g.arrival_status).length || 0
+      const todayArrivals = todayGuests?.filter((g: any) => g.arrival_status).length || 0
+      const todayPending = todayGuests?.filter((g: any) => !g.arrival_status).length || 0
       
       // Calculate no-shows (guests whose estimated arrival was more than 2 hours ago and still not arrived)
       const twoHoursAgo = new Date()
       twoHoursAgo.setHours(twoHoursAgo.getHours() - 2)
-      const todayNoShows = todayGuests?.filter(g => {
+      const todayNoShows = todayGuests?.filter((g: any) => {
         if (g.arrival_status) return false
         const estimatedTime = new Date(`${format(today, 'yyyy-MM-dd')}T${g.estimated_arrival}`)
         return estimatedTime < twoHoursAgo
@@ -130,14 +130,14 @@ const DashboardMetrics = ({ isSecurityUser, userOrganization, selectedDate, isOp
           .lte('visit_date', format(selectedDate, 'yyyy-MM-dd'))
       )
 
-      const hourCounts = peakHoursData?.reduce((acc, guest) => {
+      const hourCounts = peakHoursData?.reduce((acc: any, guest: any) => {
         const hour = parseInt(guest.estimated_arrival.split(':')[0])
         acc[hour] = (acc[hour] || 0) + 1
         return acc
       }, {} as Record<number, number>) || {}
 
       const peakHours = Object.entries(hourCounts)
-        .map(([hour, count]) => ({ hour: parseInt(hour), count }))
+        .map(([hour, count]) => ({ hour: parseInt(hour), count: count as number }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 6)
 
@@ -152,7 +152,7 @@ const DashboardMetrics = ({ isSecurityUser, userOrganization, selectedDate, isOp
           .limit(10)
       )
 
-      const recentActivity = recentData?.map(guest => ({
+      const recentActivity = recentData?.map((guest: any) => ({
         guest_name: guest.name,
         organization: guest.organization,
         action: guest.arrival_status ? 'arrived' : 'scheduled' as 'arrived' | 'scheduled',
@@ -261,7 +261,7 @@ const DashboardMetrics = ({ isSecurityUser, userOrganization, selectedDate, isOp
                   <div>
                     <h3 className="text-lg font-bold text-black mb-4">Top Organizations (7 days)</h3>
                     <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {metrics.topOrganizations.map((org, index) => (
+                      {metrics.topOrganizations.map((org) => (
                         <div key={org.name} className="flex justify-between items-center p-3 bg-gray-50 border border-gray-300">
                           <span className="text-sm font-medium text-black">{org.name}</span>
                           <span className="text-sm font-bold text-black">{org.count} visits</span>
