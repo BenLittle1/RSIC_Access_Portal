@@ -347,9 +347,10 @@ async function processIncomingEmail(senderEmail, emailSubject, emailContent) {
 
     const userData = senderCheck.user;
 
-    // 2. Check processing limits (higher limit for Security users)
-    const defaultDailyLimit = userData.organization === 'Security' ? 50 : 10;
-    const limitCheck = await checkProcessingLimits(userData.user_id, defaultDailyLimit);
+    // 2. Check processing limits (configurable per user, with defaults and env override)
+    const envDailyLimit = process.env.MAX_DAILY_EMAIL_PROCESSING ? parseInt(process.env.MAX_DAILY_EMAIL_PROCESSING) : null;
+    const userDailyLimit = envDailyLimit || userData.max_daily_email_processing || (userData.organization === 'Security' ? 100 : 50);
+    const limitCheck = await checkProcessingLimits(userData.user_id, userDailyLimit);
     if (!limitCheck.canProcess) {
       console.log(`❌ Daily limit exceeded for user ${userData.email}: ${limitCheck.currentCount}/${limitCheck.dailyLimit}`);
       result.errors.push(limitCheck.error || 'Daily processing limit exceeded');

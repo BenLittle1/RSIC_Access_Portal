@@ -75,8 +75,8 @@ class GmailEmailProcessor {
 
   async checkForNewEmails() {
     try {
-      // Search for unread emails with guest-related keywords
-      const query = 'is:unread (guest OR visitor OR visit OR meeting OR appointment OR access)';
+      // Search for unread emails with guest-related keywords (broader search)
+      const query = 'is:unread (guest OR visitor OR visit OR meeting OR appointment OR access OR add OR new OR invite OR request OR arrival)';
       
       const response = await this.gmail.users.messages.list({
         userId: 'me',

@@ -286,14 +286,30 @@ const AddGuestModal = ({
             <label htmlFor="estimated_arrival" className="block text-sm font-bold text-black mb-1">
               Estimated Arrival Time *
             </label>
-            <input
+            <select
               id="estimated_arrival"
-              type="time"
               value={formData.estimated_arrival}
               onChange={(e) => handleInputChange('estimated_arrival', e.target.value)}
               className="w-full p-2 border border-black text-black bg-white focus:outline-none focus:ring-2 focus:ring-gray-400"
               required
-            />
+            >
+              <option value="">Select arrival time</option>
+              {Array.from({ length: 49 }, (_, i) => {
+                // Start at 8:00 AM (480 minutes) with 15-minute increments
+                const totalMinutes = 480 + (i * 15) // 8:00 AM to 8:00 PM (720 minutes)
+                const hours = Math.floor(totalMinutes / 60)
+                const minutes = totalMinutes % 60
+                const timeString = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+                const displayHours = hours > 12 ? hours - 12 : hours
+                const ampm = hours < 12 ? 'AM' : 'PM'
+                const displayTime = `${displayHours}:${minutes.toString().padStart(2, '0')} ${ampm}`
+                return (
+                  <option key={timeString} value={timeString}>
+                    {displayTime}
+                  </option>
+                )
+              })}
+            </select>
           </div>
 
           {/* Floor Access */}

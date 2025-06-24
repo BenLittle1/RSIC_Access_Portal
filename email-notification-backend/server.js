@@ -10,6 +10,23 @@ const { body, param, validationResult } = require('express-validator');
 const GmailEmailProcessor = require('./gmail-integration');
 require('dotenv').config();
 
+// Async error wrapper utility
+const asyncHandler = (fn) => {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+};
+
+// Error logging utility
+const logError = (context, error, additionalInfo = {}) => {
+  console.error(`❌ Error in ${context}:`, {
+    message: error.message,
+    stack: error.stack,
+    timestamp: new Date().toISOString(),
+    ...additionalInfo
+  });
+};
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -165,37 +182,69 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Email transporter setup
+// Email transporter setup with error handling
 const createEmailTransporter = () => {
-  // Support multiple email providers
-  if (process.env.EMAIL_PROVIDER === 'gmail') {
-    return nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_APP_PASSWORD
+  try {
+    let transporterConfig;
+    
+    // Support multiple email providers
+    if (process.env.EMAIL_PROVIDER === 'gmail') {
+      if (!process.env.EMAIL_USER || !process.env.EMAIL_APP_PASSWORD) {
+        throw new Error('Gmail configuration missing: EMAIL_USER and EMAIL_APP_PASSWORD required');
+      }
+      
+      transporterConfig = {
+        service: 'gmail',
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_APP_PASSWORD
+        }
+      };
+    } else if (process.env.EMAIL_PROVIDER === 'sendgrid') {
+      if (!process.env.SENDGRID_API_KEY) {
+        throw new Error('SendGrid configuration missing: SENDGRID_API_KEY required');
+      }
+      
+      transporterConfig = {
+        host: 'smtp.sendgrid.net',
+        port: 587,
+        auth: {
+          user: 'apikey',
+          pass: process.env.SENDGRID_API_KEY
+        }
+      };
+    } else {
+      // Generic SMTP
+      if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+        throw new Error('SMTP configuration missing: SMTP_HOST, SMTP_USER, and SMTP_PASS required');
+      }
+      
+      transporterConfig = {
+        host: process.env.SMTP_HOST,
+        port: process.env.SMTP_PORT || 587,
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS
+        }
+      };
+    }
+
+    const transporter = nodemailer.createTransport(transporterConfig);
+    
+    // Verify transporter configuration
+    transporter.verify((error, success) => {
+      if (error) {
+        logError('Email Transporter Verification', error, { provider: process.env.EMAIL_PROVIDER });
+      } else {
+        console.log('✅ Email transporter verified successfully');
       }
     });
-  } else if (process.env.EMAIL_PROVIDER === 'sendgrid') {
-    return nodemailer.createTransport({
-      host: 'smtp.sendgrid.net',
-      port: 587,
-      auth: {
-        user: 'apikey',
-        pass: process.env.SENDGRID_API_KEY
-      }
-    });
-  } else {
-    // Generic SMTP
-    return nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: process.env.SMTP_PORT || 587,
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
-      }
-    });
+
+    return transporter;
+  } catch (error) {
+    logError('Email Transporter Creation', error, { provider: process.env.EMAIL_PROVIDER });
+    throw error;
   }
 };
 
@@ -370,95 +419,131 @@ app.post('/api/verify-admin', authenticateUser, async (req, res) => {
   }
 });
 
-app.post('/api/notify-arrival', validateRequest(arrivalValidation), authenticateUser, async (req, res) => {
-  try {
-    const { guestId, arrivalStatus } = req.body;
+app.post('/api/notify-arrival', validateRequest(arrivalValidation), authenticateUser, asyncHandler(async (req, res) => {
+  const { guestId, arrivalStatus } = req.body;
 
-    // Validate request
-    if (!guestId || typeof arrivalStatus !== 'boolean') {
-      return res.status(400).json({ 
-        error: 'Missing required fields: guestId and arrivalStatus' 
-      });
-    }
-
-    // Only send email when guest arrives (status changes to true)
-    if (!arrivalStatus) {
-      return res.json({ 
-        message: 'No email sent - guest departure noted', 
-        guestId 
-      });
-    }
-
-    // Fetch guest data from Supabase
-    const { data: guestData, error: guestError } = await supabase
-      .from('guests')
-      .select('*')
-      .eq('id', guestId)
-      .single();
-
-    if (guestError || !guestData) {
-      console.error('Error fetching guest data:', guestError);
-      return res.status(404).json({ error: 'Guest not found' });
-    }
-
-    // Fetch inviter profile data
-    const { data: inviterData, error: inviterError } = await supabase
-      .from('profiles')
-      .select('full_name, email')
-      .eq('user_id', guestData.inviter_id)
-      .single();
-
-    if (inviterError || !inviterData) {
-      console.error('Error fetching inviter data:', inviterError);
-      return res.status(404).json({ error: 'Inviter not found' });
-    }
-
-    // Check if inviter has an email
-    if (!inviterData.email) {
-      console.log('No email found for inviter:', inviterData.full_name);
-      return res.status(400).json({ error: 'Inviter email not found' });
-    }
-
-    // Create email transporter
-    const transporter = createEmailTransporter();
-
-    // Generate email content
-    const emailContent = generateArrivalEmail(guestData, inviterData);
-
-    // Send email
-    const mailOptions = {
-      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
-      to: inviterData.email,
-      subject: emailContent.subject,
-      text: emailContent.text,
-      html: emailContent.html
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-    
-    console.log('Email sent successfully:', {
-      messageId: info.messageId,
-      to: inviterData.email,
-      guest: guestData.name,
-      inviter: inviterData.full_name
-    });
-
-    res.json({ 
-      message: 'Arrival notification sent successfully',
-      guestId,
-      emailSent: true,
-      recipient: inviterData.email,
-      messageId: info.messageId
-    });
-
-  } catch (error) {
-    console.error('Error sending arrival notification:', error);
-    res.status(500).json({ 
-      error: 'Failed to send notification',
-      details: error.message 
+  // Validate request
+  if (!guestId || typeof arrivalStatus !== 'boolean') {
+    return res.status(400).json({ 
+      error: 'Missing required fields: guestId and arrivalStatus',
+      received: { guestId: typeof guestId, arrivalStatus: typeof arrivalStatus }
     });
   }
-});
+
+  // Only send email when guest arrives (status changes to true)
+  if (!arrivalStatus) {
+    return res.json({ 
+      message: 'No email sent - guest departure noted', 
+      guestId 
+    });
+  }
+
+  // Fetch guest data from Supabase
+  const { data: guestData, error: guestError } = await supabase
+    .from('guests')
+    .select('*')
+    .eq('id', guestId)
+    .single();
+
+  if (guestError) {
+    logError('Fetch Guest Data', guestError, { guestId, userId: req.user.id });
+    if (guestError.code === 'PGRST116') {
+      return res.status(404).json({ error: 'Guest not found', guestId });
+    }
+    throw guestError;
+  }
+
+  if (!guestData) {
+    return res.status(404).json({ error: 'Guest not found', guestId });
+  }
+
+  // Fetch inviter profile data
+  const { data: inviterData, error: inviterError } = await supabase
+    .from('profiles')
+    .select('full_name, email')
+    .eq('user_id', guestData.inviter_id)
+    .single();
+
+  if (inviterError) {
+    logError('Fetch Inviter Data', inviterError, { inviterId: guestData.inviter_id, guestId });
+    if (inviterError.code === 'PGRST116') {
+      return res.status(404).json({ error: 'Inviter profile not found' });
+    }
+    throw inviterError;
+  }
+
+  if (!inviterData || !inviterData.email) {
+    logError('Missing Inviter Email', new Error('No email found'), { 
+      inviter: inviterData?.full_name, 
+      inviterId: guestData.inviter_id 
+    });
+    return res.status(400).json({ 
+      error: 'Inviter email not configured',
+      details: 'The person who invited this guest does not have an email address on file'
+    });
+  }
+
+  // Create email transporter with error handling
+  let transporter;
+  try {
+    transporter = createEmailTransporter();
+  } catch (transporterError) {
+    logError('Email Transporter Creation', transporterError);
+    return res.status(503).json({ 
+      error: 'Email service unavailable',
+      details: 'Unable to configure email delivery system'
+    });
+  }
+
+  // Generate email content
+  const emailContent = generateArrivalEmail(guestData, inviterData);
+
+  // Send email with retry logic
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+    to: inviterData.email,
+    subject: emailContent.subject,
+    text: emailContent.text,
+    html: emailContent.html
+  };
+
+  let emailInfo;
+  try {
+    emailInfo = await transporter.sendMail(mailOptions);
+  } catch (emailError) {
+    logError('Email Send', emailError, { 
+      recipient: inviterData.email, 
+      guestId, 
+      guestName: guestData.name 
+    });
+    
+    // Return a partial success - guest status updated but email failed
+    return res.status(207).json({ 
+      message: 'Guest arrival noted, but email notification failed',
+      guestId,
+      emailSent: false,
+      error: 'Email delivery failed',
+      details: 'Please contact the inviter manually'
+    });
+  }
+  
+  console.log('✅ Email sent successfully:', {
+    messageId: emailInfo.messageId,
+    to: inviterData.email,
+    guest: guestData.name,
+    inviter: inviterData.full_name,
+    timestamp: new Date().toISOString()
+  });
+
+  res.json({ 
+    message: 'Arrival notification sent successfully',
+    guestId,
+    emailSent: true,
+    recipient: inviterData.email,
+    messageId: emailInfo.messageId,
+    timestamp: new Date().toISOString()
+  });
+}));
 
 // Email Processing API Routes
 
@@ -552,7 +637,7 @@ app.get('/api/email-guests/pending/:userId', authenticateUser, async (req, res) 
 app.post('/api/email-guests/approve/:recordId', authenticateUser, async (req, res) => {
   try {
     const { recordId } = req.params;
-    const { guestData, userId } = req.body;
+    const { guestData: requestGuestData, userId } = req.body;
 
     // Security: Users can only approve their own records unless they're Security
     if (req.user.id !== userId && req.profile.organization !== 'Security') {
@@ -561,7 +646,7 @@ app.post('/api/email-guests/approve/:recordId', authenticateUser, async (req, re
       });
     }
 
-    if (!recordId || !guestData || !userId) {
+    if (!recordId || !requestGuestData || !userId) {
       return res.status(400).json({ 
         error: 'Missing required fields: recordId, guestData, userId' 
       });
@@ -587,12 +672,12 @@ app.post('/api/email-guests/approve/:recordId', authenticateUser, async (req, re
     const { data: newGuestData, error: newGuestError } = await supabaseAdmin
       .from('guests')
       .insert([{
-        name: guestData.name,
-        visit_date: guestData.visit_date,
-        estimated_arrival: guestData.estimated_arrival,
-        floor_access: guestData.floor_access,
-        organization: guestData.organization,
-        inviter_id: guestData.inviter_id,
+        name: requestGuestData.name,
+        visit_date: requestGuestData.visit_date,
+        estimated_arrival: requestGuestData.estimated_arrival,
+        floor_access: requestGuestData.floor_access,
+        organization: requestGuestData.organization,
+        inviter_id: requestGuestData.inviter_id,
         requester_email: emailRecord.sender_email
       }])
       .select()
@@ -763,38 +848,144 @@ app.post('/api/test-email-processing', async (req, res) => {
   }
 });
 
-// Error handling middleware
+// Global error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+  // Log the full error for debugging
+  console.error('🚨 Unhandled error:', {
+    message: err.message,
+    stack: err.stack,
+    url: req.url,
+    method: req.method,
+    timestamp: new Date().toISOString(),
+    userAgent: req.get('User-Agent'),
+    ip: req.ip
+  });
+
+  // Don't expose stack traces in production
+  const isDevelopment = process.env.NODE_ENV !== 'production';
+  
+  // Handle specific error types
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
+      error: 'Validation failed',
+      details: err.message,
+      ...(isDevelopment && { stack: err.stack })
+    });
+  }
+  
+  if (err.name === 'UnauthorizedError') {
+    return res.status(401).json({
+      error: 'Authentication failed',
+      details: 'Invalid or expired token'
+    });
+  }
+  
+  if (err.code === 'ECONNREFUSED') {
+    return res.status(503).json({
+      error: 'Service unavailable',
+      details: 'Database connection failed'
+    });
+  }
+
+  // Generic server error
+  res.status(500).json({
+    error: 'Internal server error',
+    details: isDevelopment ? err.message : 'Something went wrong',
+    timestamp: new Date().toISOString(),
+    ...(isDevelopment && { stack: err.stack })
+  });
 });
 
 // 404 handler
 app.use((req, res) => {
-  res.status(404).json({ error: 'Route not found' });
+  res.status(404).json({ 
+    error: 'Route not found',
+    path: req.path,
+    method: req.method,
+    timestamp: new Date().toISOString()
+  });
 });
 
-// Start server
-app.listen(PORT, async () => {
-  console.log(`🚀 Email notification server running on port ${PORT}`);
-  console.log(`📧 Email provider: ${process.env.EMAIL_PROVIDER || 'SMTP'}`);
-  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-  
-  // Initialize and start Gmail monitoring
-  if (process.env.GMAIL_REFRESH_TOKEN) {
-    try {
-      console.log('📬 Initializing Gmail monitoring...');
-      const gmailProcessor = new GmailEmailProcessor();
-      await gmailProcessor.initialize();
-      await gmailProcessor.startMonitoring(0.5); // Check every 30 seconds
-      console.log('✅ Gmail monitoring started successfully');
-    } catch (error) {
-      console.error('❌ Failed to start Gmail monitoring:', error.message);
-      console.log('📝 Note: Gmail monitoring is optional. Server will continue without it.');
+// Start server with comprehensive error handling
+const startServer = async () => {
+  try {
+    // Validate critical environment variables
+    const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_ANON_KEY'];
+    const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+    
+    if (missingEnvVars.length > 0) {
+      throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
     }
-  } else {
-    console.log('📭 Gmail monitoring disabled (GMAIL_REFRESH_TOKEN not configured)');
+
+    // Test email configuration
+    try {
+      const testTransporter = createEmailTransporter();
+      console.log('✅ Email configuration validated');
+    } catch (emailConfigError) {
+      console.warn('⚠️  Email configuration issues detected:', emailConfigError.message);
+      console.warn('📧 Email notifications may not work properly');
+    }
+
+    // Start the server
+    const server = app.listen(PORT, async () => {
+      console.log(`🚀 Email notification server running on port ${PORT}`);
+      console.log(`📧 Email provider: ${process.env.EMAIL_PROVIDER || 'SMTP'}`);
+      console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`🔒 Input validation: ${process.env.ENABLE_VALIDATION !== 'false' ? 'ENABLED' : 'DISABLED'}`);
+      
+      // Initialize and start Gmail monitoring
+      if (process.env.GMAIL_REFRESH_TOKEN) {
+        try {
+          console.log('📬 Initializing Gmail monitoring...');
+          const gmailProcessor = new GmailEmailProcessor();
+          await gmailProcessor.initialize();
+          await gmailProcessor.startMonitoring(0.5); // Check every 30 seconds
+          console.log('✅ Gmail monitoring started successfully');
+        } catch (gmailError) {
+          logError('Gmail Monitoring Initialization', gmailError);
+          console.log('📝 Note: Gmail monitoring failed but server will continue without it.');
+        }
+      } else {
+        console.log('📭 Gmail monitoring disabled (GMAIL_REFRESH_TOKEN not configured)');
+      }
+    });
+
+    // Graceful shutdown handling
+    const gracefulShutdown = (signal) => {
+      console.log(`\n🛑 Received ${signal}. Starting graceful shutdown...`);
+      server.close((err) => {
+        if (err) {
+          logError('Server Shutdown', err);
+          process.exit(1);
+        }
+        console.log('✅ Server shut down gracefully');
+        process.exit(0);
+      });
+    };
+
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
+    // Handle uncaught exceptions
+    process.on('uncaughtException', (error) => {
+      logError('Uncaught Exception', error);
+      console.log('🚨 Uncaught exception detected. Shutting down...');
+      process.exit(1);
+    });
+
+    process.on('unhandledRejection', (reason, promise) => {
+      logError('Unhandled Promise Rejection', new Error(String(reason)), { promise });
+      console.log('🚨 Unhandled promise rejection detected.');
+    });
+
+  } catch (startupError) {
+    logError('Server Startup', startupError);
+    console.error('💥 Failed to start server:', startupError.message);
+    process.exit(1);
   }
-});
+};
+
+// Start the server
+startServer();
 
 module.exports = app; 
