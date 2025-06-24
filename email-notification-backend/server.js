@@ -7,6 +7,7 @@ const nodemailer = require('nodemailer');
 const { createClient } = require('@supabase/supabase-js');
 const emailProcessor = require('./emailProcessor');
 const { body, param, validationResult } = require('express-validator');
+const GmailEmailProcessor = require('./gmail-integration');
 require('dotenv').config();
 
 const app = express();
@@ -148,7 +149,8 @@ app.use(cors({
     process.env.FRONTEND_URL || 'http://localhost:5173',
     'https://rsic.netlify.app',
     'http://localhost:5173',
-    'http://localhost:5177'
+    'http://localhost:5177',
+    'http://localhost:5174'
   ],
   credentials: true
 }));
@@ -582,7 +584,7 @@ app.post('/api/email-guests/approve/:recordId', authenticateUser, async (req, re
     }
 
     // Create guest in database using admin client (bypasses RLS)
-    const { data: guestData, error: guestError } = await supabaseAdmin
+    const { data: newGuestData, error: newGuestError } = await supabaseAdmin
       .from('guests')
       .insert([{
         name: guestData.name,
@@ -596,8 +598,8 @@ app.post('/api/email-guests/approve/:recordId', authenticateUser, async (req, re
       .select()
       .single();
 
-    if (guestError) {
-      throw guestError;
+    if (newGuestError) {
+      throw newGuestError;
     }
 
     // Update email record status
@@ -605,7 +607,7 @@ app.post('/api/email-guests/approve/:recordId', authenticateUser, async (req, re
       .from('email_processed_guests')
       .update({ 
         processing_status: 'approved',
-        guest_id: guestData.id
+        guest_id: newGuestData.id
       })
       .eq('id', recordId);
 
@@ -616,7 +618,7 @@ app.post('/api/email-guests/approve/:recordId', authenticateUser, async (req, re
     res.json({
       success: true,
       message: 'Guest approved and created successfully',
-      guest: guestData
+      guest: newGuestData
     });
 
   } catch (error) {
@@ -773,10 +775,26 @@ app.use((req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 Email notification server running on port ${PORT}`);
   console.log(`📧 Email provider: ${process.env.EMAIL_PROVIDER || 'SMTP'}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  
+  // Initialize and start Gmail monitoring
+  if (process.env.GMAIL_REFRESH_TOKEN) {
+    try {
+      console.log('📬 Initializing Gmail monitoring...');
+      const gmailProcessor = new GmailEmailProcessor();
+      await gmailProcessor.initialize();
+      await gmailProcessor.startMonitoring(0.5); // Check every 30 seconds
+      console.log('✅ Gmail monitoring started successfully');
+    } catch (error) {
+      console.error('❌ Failed to start Gmail monitoring:', error.message);
+      console.log('📝 Note: Gmail monitoring is optional. Server will continue without it.');
+    }
+  } else {
+    console.log('📭 Gmail monitoring disabled (GMAIL_REFRESH_TOKEN not configured)');
+  }
 });
 
 module.exports = app; 
