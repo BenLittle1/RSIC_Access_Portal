@@ -21,9 +21,6 @@ const UserAuthenticationPage = () => {
   const [allProfiles, setAllProfiles] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState<string | null>(null)
-  const [isPasswordProtected, setIsPasswordProtected] = useState(true)
-  const [passwordInput, setPasswordInput] = useState('')
-  const [passwordError, setPasswordError] = useState('')
   const [editingOrganization, setEditingOrganization] = useState<string | null>(null)
   const [updatingOrganization, setUpdatingOrganization] = useState<string | null>(null)
 
@@ -31,40 +28,6 @@ const UserAuthenticationPage = () => {
   useEffect(() => {
     checkUserAndLoadProfiles()
   }, [])
-
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setUpdating('password-verification')
-    
-    try {
-      const response = await authenticatedFetch('/verify-admin', {
-        method: 'POST',
-        body: JSON.stringify({ password: passwordInput })
-      })
-      
-      if (response.ok) {
-        const data = await response.json()
-        if (data.verified) {
-          setIsPasswordProtected(false)
-          setPasswordError('')
-        } else {
-          setPasswordError('Access denied')
-          setPasswordInput('')
-        }
-      } else {
-        setPasswordError('Access denied')
-        setPasswordInput('')
-      }
-    } catch (error) {
-      console.error('Admin verification failed:', error)
-      setPasswordError('Verification failed - please try again')
-      setPasswordInput('')
-    } finally {
-      setUpdating(null)
-    }
-  }
-
-
 
   const checkUserAndLoadProfiles = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -197,57 +160,6 @@ const UserAuthenticationPage = () => {
     )
   }
 
-  // Password protection screen
-  if (isPasswordProtected) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="bg-white border border-black p-8 w-full max-w-md">
-          <h2 className="text-2xl font-bold text-black mb-6 text-center">
-            User Authentication Access
-          </h2>
-          <p className="text-gray-600 mb-6 text-center">
-            This page is password protected. Please enter the access password.
-          </p>
-          <form onSubmit={handlePasswordSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-black mb-2">
-                Password
-              </label>
-              <input
-                type="password"
-                id="password"
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
-                className="w-full px-3 py-2 border border-black focus:outline-none focus:border-gray-500"
-                placeholder="Enter password"
-                required
-              />
-            </div>
-            {passwordError && (
-              <div className="text-red-600 text-sm">{passwordError}</div>
-            )}
-            <div className="flex space-x-4">
-              <button
-                type="submit"
-                disabled={updating === 'password-verification'}
-                className="flex-1 bg-black text-white py-2 px-4 hover:bg-gray-800 disabled:bg-gray-400 transition-colors"
-              >
-                {updating === 'password-verification' ? 'Verifying...' : 'Access Page'}
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate('/settings')}
-                className="flex-1 bg-gray-200 text-black py-2 px-4 hover:bg-gray-300 transition-colors border border-black"
-              >
-                Back to Settings
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
@@ -278,8 +190,8 @@ const UserAuthenticationPage = () => {
         </div>
 
         {/* Users Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full border border-black">
+        <div className="overflow-x-auto border border-black">
+          <table className="w-full">
             <thead className="bg-gray-50 border-b border-black">
               <tr>
                 <th className="text-left p-3 font-bold text-black border-r border-gray-300">Full Name</th>
@@ -369,7 +281,7 @@ const UserAuthenticationPage = () => {
                           {updating === profile.id ? 'Updating...' : 'Deny'}
                         </button>
                       )}
-                      {profile.authentication_status !== 'Pending' && (
+                      {/* {profile.authentication_status !== 'Pending' && (
                         <button
                           onClick={() => updateAuthenticationStatus(profile.id, 'Pending')}
                           disabled={updating === profile.id}
@@ -377,7 +289,7 @@ const UserAuthenticationPage = () => {
                         >
                           {updating === profile.id ? 'Updating...' : 'Pending'}
                         </button>
-                      )}
+                      )} */}
                     </div>
                   </td>
                 </tr>

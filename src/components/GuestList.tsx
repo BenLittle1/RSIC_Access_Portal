@@ -94,17 +94,19 @@ const GuestList = ({
 
           <div className="flex space-x-3">
             <button
-              onClick={onShowMetrics}
-              className="px-4 py-2 bg-white text-black border border-black hover:bg-gray-100 transition-colors font-medium flex-shrink-0"
-            >
-              View Metrics
-            </button>
-            <button
               onClick={onShowAddGuest}
               className="px-4 py-2 bg-black text-white hover:bg-gray-800 transition-colors font-medium flex-shrink-0"
             >
               Add Guest
             </button>
+            {/*
+            <button
+              onClick={onShowMetrics}
+              className="px-4 py-2 bg-gray-100 text-black border border-black hover:bg-gray-200 transition-colors font-medium flex-shrink-0"
+            >
+              View Metrics
+            </button>
+            */}
           </div>
         </div>
       </div>
@@ -148,14 +150,22 @@ const GuestList = ({
                 >
                   <td className="p-3 border-r border-gray-200">
                     <div className="flex items-center justify-start pl-2">
-                      <input
-                        type="checkbox"
-                        checked={guest.arrival_status}
-                        onChange={isSecurityUser ? (e) => onUpdateArrivalStatus(guest.id, e.target.checked) : undefined}
-                        className={`w-4 h-4 text-black bg-white border-2 border-black rounded focus:ring-black focus:ring-2 accent-black ${
-                          !isSecurityUser ? 'pointer-events-none cursor-not-allowed' : ''
-                        }`}
-                      />
+                      {isSecurityUser ? (
+                        <input
+                          type="checkbox"
+                          checked={guest.arrival_status}
+                          onChange={(e) => onUpdateArrivalStatus(guest.id, e.target.checked)}
+                          className="w-4 h-4 text-black bg-white border-2 border-black rounded focus:ring-black focus:ring-2 accent-black"
+                        />
+                      ) : (
+                        <span className={`px-2 py-1 text-xs font-semibold rounded-full border ${
+                          guest.arrival_status 
+                            ? 'bg-green-100 text-green-800 border-green-300' 
+                            : 'bg-gray-100 text-gray-800 border-gray-300'
+                        }`}>
+                          {guest.arrival_status ? 'Arrived' : 'Not Arrived'}
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="p-3 border-r border-gray-200 font-medium text-black">
