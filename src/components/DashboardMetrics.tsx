@@ -42,8 +42,8 @@ const DashboardMetrics = ({ isSecurityUser, userOrganization, selectedDate, isOp
   useEffect(() => {
     if (isOpen) {
       fetchMetrics()
-      // Refresh metrics every 30 seconds when modal is open
-      const interval = setInterval(fetchMetrics, 30 * 1000)
+      // Refresh metrics every 1 minute when modal is open
+      const interval = setInterval(fetchMetrics, 60 * 1000)
       return () => clearInterval(interval)
     }
   }, [isOpen, selectedDate, isSecurityUser, userOrganization])
@@ -209,17 +209,17 @@ const DashboardMetrics = ({ isSecurityUser, userOrganization, selectedDate, isOp
           </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-hidden p-6">
+        {/* Content - Made scrollable */}
+        <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
-            <div className="flex items-center justify-center h-full">
+            <div className="flex items-center justify-center min-h-full">
               <div className="text-center">
                 <div className="w-12 h-12 mx-auto mb-4 border-4 border-gray-300 border-t-black rounded-full animate-spin"></div>
                 <p className="text-gray-500 text-lg">Loading metrics...</p>
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-6 h-full">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-full">
               {/* Left Column - Key Stats */}
               <div className="space-y-6">
                 <div>
@@ -307,9 +307,9 @@ const DashboardMetrics = ({ isSecurityUser, userOrganization, selectedDate, isOp
         </div>
 
         {/* Footer */}
-        <div className="border-t-2 border-black p-4 bg-gray-50">
+        <div className="border-t-2 border-black p-4 bg-gray-50 flex-shrink-0">
           <div className="flex justify-between items-center text-sm text-gray-600">
-            <span>Auto-refreshes every 30 seconds</span>
+            <span>Auto-refreshes every 1 minute</span>
             <span>Last updated: {format(new Date(), 'h:mm:ss a')}</span>
           </div>
         </div>

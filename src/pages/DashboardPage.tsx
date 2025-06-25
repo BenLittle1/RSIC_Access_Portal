@@ -276,7 +276,7 @@ const DashboardPage = () => {
       <header className="border-b border-black bg-white px-6 py-4">
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold text-black">
-            SRIC Access Portal — {isSecurityUser ? 'Security' : profile.organization}
+            SRIC Access Portal — {isSecurityUser ? 'Security Dashboard' : `${profile.organization} Dashboard`}
           </h1>
           <div className="flex items-center space-x-4">
             <span className="text-black font-bold">
@@ -306,8 +306,8 @@ const DashboardPage = () => {
 
       {/* Main Content */}
       <div className="flex h-[calc(100vh-80px)]">
-        {/* Left Side - Guest List (75%) */}
-        <div className="w-3/4 border-r border-black">
+        {/* Left Side - Guest List */}
+        <div className="flex-grow border-r border-black">
           <GuestList
             selectedDate={selectedDate}
             setSelectedDate={setSelectedDate}
@@ -320,8 +320,8 @@ const DashboardPage = () => {
           />
         </div>
 
-        {/* Right Side - Calendar (25%) */}
-        <div className="w-1/4">
+        {/* Right Side - Calendar */}
+        <div className="w-[350px] flex-shrink-0">
           <CalendarView
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}

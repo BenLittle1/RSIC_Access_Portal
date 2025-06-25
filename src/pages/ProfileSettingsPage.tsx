@@ -18,9 +18,11 @@ const ProfileSettingsPage = () => {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [currentAuthEmail, setCurrentAuthEmail] = useState('')
   const [formData, setFormData] = useState({
     full_name: '',
-    username: ''
+    username: '',
+    email: ''
   })
 
   useEffect(() => {
@@ -34,6 +36,9 @@ const ProfileSettingsPage = () => {
       navigate('/')
       return
     }
+
+    // Set current auth email
+    setCurrentAuthEmail(user.email || '')
 
     // Fetch user profile
     const { data: profileData, error } = await supabase
@@ -49,7 +54,8 @@ const ProfileSettingsPage = () => {
       setProfile(profileData)
       setFormData({
         full_name: profileData.full_name || '',
-        username: profileData.username || ''
+        username: profileData.username || '',
+        email: user.email || ''
       })
     }
     
@@ -68,23 +74,50 @@ const ProfileSettingsPage = () => {
 
     if (!profile) return
 
-    const { error } = await supabase
+    try {
+      // Check if email has changed
+      const emailChanged = formData.email !== currentAuthEmail
+
+      // Update profile information in database
+      const { error: profileError } = await supabase
       .from('profiles')
       .update({
         full_name: formData.full_name,
-        username: formData.username
+          username: formData.username,
+          email: formData.email
       })
       .eq('id', profile.id)
 
-    if (error) {
-      setMessage('Error updating profile: ' + error.message)
+      if (profileError) {
+        throw profileError
+      }
+
+      // If email changed, update it in Supabase Auth
+      if (emailChanged) {
+        const { error: emailError } = await supabase.auth.updateUser({
+          email: formData.email
+        })
+
+        if (emailError) {
+          throw emailError
+        }
+
+        setMessage('Profile updated successfully! Please check your new email for verification.')
+        setCurrentAuthEmail(formData.email)
     } else {
       setMessage('Profile updated successfully!')
+      }
+
+      // Update local profile state
       setProfile({
         ...profile,
         full_name: formData.full_name,
-        username: formData.username
+        username: formData.username,
+        email: formData.email
       })
+
+    } catch (error: any) {
+      setMessage('Error updating profile: ' + error.message)
     }
 
     setSaving(false)
@@ -161,6 +194,24 @@ const ProfileSettingsPage = () => {
               className="w-full p-3 border border-black text-black bg-white focus:outline-none focus:ring-2 focus:ring-gray-400"
               required
             />
+          </div>
+
+          {/* Email */}
+          <div>
+            <label htmlFor="email" className="block text-sm font-bold text-black mb-1">
+              Email Address *
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={formData.email}
+              onChange={(e) => handleInputChange('email', e.target.value)}
+              className="w-full p-3 border border-black text-black bg-white focus:outline-none focus:ring-2 focus:ring-gray-400"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              If you change your email, you'll need to verify the new address before you can sign in with it.
+            </p>
           </div>
 
           {/* Organization - Read Only */}

@@ -14,12 +14,11 @@ const CalendarView = ({ selectedDate, onSelectDate }: CalendarViewProps) => {
   }
 
   return (
-    <div className="h-full bg-white p-4">
-      
+    <div className="h-full bg-white p-4 flex flex-col">
       <div 
-        className="calendar-container"
+        className="calendar-container flex justify-center"
         style={{
-          '--rdp-cell-size': '40px',
+          '--rdp-cell-size': '55px',
           '--rdp-accent-color': '#000000',
           '--rdp-background-color': '#ffffff',
           '--rdp-accent-color-dark': '#333333',
