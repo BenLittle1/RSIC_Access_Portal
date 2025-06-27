@@ -56,6 +56,9 @@ const AddGuestModal = ({
   const organizations = ['Security', 'AXL', 'Knowledgehook', 'Yscope']
   const floors = Array.from({ length: 13 }, (_, i) => i + 1) // Floors 1-13
 
+  const guestNames = formData.name.split(',').map(name => name.trim()).filter(name => name)
+  const totalEntries = guestNames.length * selectedDates.length
+
   const handleFloorToggle = (floor: number) => {
     setSelectedFloors(prev => {
       if (prev.includes(floor)) {
@@ -147,24 +150,25 @@ const AddGuestModal = ({
         ? `Floor ${selectedFloors[0]}`
         : `Floors ${selectedFloors.join(', ')}`
 
-      // Create one guest entry per date (not per floor)
-      const totalEntries = selectedDates.length
+      // Create guest entries for each name and each date
       let successCount = 0
 
-      for (const date of selectedDates) {
-        const guestData = {
-          name: formData.name.trim(),
-          visit_date: format(date, 'yyyy-MM-dd'),
-          estimated_arrival: formData.estimated_arrival,
-          arrival_status: false,
-          floor_access: floorAccessString,
-          inviter_id: userProfile.user_id,
-          organization: formData.organization,
-          requester_email: requesterEmail
-        }
+      for (const name of guestNames) {
+        for (const date of selectedDates) {
+          const guestData = {
+            name: name,
+            visit_date: format(date, 'yyyy-MM-dd'),
+            estimated_arrival: formData.estimated_arrival,
+            arrival_status: false,
+            floor_access: floorAccessString,
+            inviter_id: userProfile.user_id,
+            organization: formData.organization,
+            requester_email: requesterEmail
+          }
 
-        const success = await onAddGuest(guestData)
-        if (success) successCount++
+          const success = await onAddGuest(guestData)
+          if (success) successCount++
+        }
       }
 
       if (successCount === totalEntries) {
@@ -185,8 +189,6 @@ const AddGuestModal = ({
     setFormData(prev => ({ ...prev, [field]: value }))
     if (error) setError('')
   }
-
-  const totalEntries = selectedDates.length
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -212,7 +214,7 @@ const AddGuestModal = ({
           {/* Guest Name */}
           <div>
             <label htmlFor="name" className="block text-sm font-bold text-black mb-1">
-              Guest Name *
+              Guest Name(s) *
             </label>
             <input
               id="name"
@@ -220,7 +222,7 @@ const AddGuestModal = ({
               value={formData.name}
               onChange={(e) => handleInputChange('name', e.target.value)}
               className="w-full p-2 border border-black text-black bg-white focus:outline-none focus:ring-2 focus:ring-gray-400"
-              placeholder="Enter guest's full name"
+              placeholder="Enter one or more names, separated by commas"
               required
             />
           </div>
@@ -383,11 +385,11 @@ const AddGuestModal = ({
           )}
 
           {/* Summary */}
-          {totalEntries > 1 && (
+          {totalEntries > 0 && (
             <div className="p-3 border border-blue-500 bg-blue-50">
               <p className="text-sm text-blue-800">
-                <strong>Summary:</strong> This will create {totalEntries} guest entries 
-                ({selectedDates.length} date{selectedDates.length > 1 ? 's' : ''} with access to {selectedFloors.length} floor{selectedFloors.length > 1 ? 's' : ''})
+                <strong>Summary:</strong> This will create <strong>{totalEntries}</strong> guest entries.
+                ({guestNames.length} guest{guestNames.length > 1 ? 's' : ''} for {selectedDates.length} date{selectedDates.length > 1 ? 's' : ''})
               </p>
             </div>
           )}
@@ -410,10 +412,10 @@ const AddGuestModal = ({
             </button>
             <button
               type="submit"
-              disabled={loading || selectedDates.length === 0 || selectedFloors.length === 0}
+              disabled={loading || guestNames.length === 0 || selectedDates.length === 0 || selectedFloors.length === 0}
               className="flex-1 py-2 px-4 bg-black text-white hover:bg-gray-800 disabled:bg-gray-400 transition-colors font-medium"
             >
-              {loading ? `Creating ${totalEntries} entries...` : `Add Guest${totalEntries > 1 ? ` (${totalEntries} entries)` : ''}`}
+              {loading ? `Creating ${totalEntries} entries...` : `Add Guest${totalEntries > 1 ? `s (${totalEntries} entries)` : ''}`}
             </button>
           </div>
         </form>

@@ -17,17 +17,23 @@ const supabase = createClient(
  */
 async function extractGuestDataFromEmail(emailContent, senderEmail) {
   try {
+    const currentDate = new Date().toISOString().split('T')[0]; // Get current date in YYYY-MM-DD
     const prompt = `
 You are a guest information extraction system for the SRIC Access Portal. 
 Extract guest details from the provided email and return ONLY a valid JSON response.
+You are designed to handle multiple guest entries from a single email.
+
+Today's date is ${currentDate}. Use this for resolving relative dates like "today" or "tomorrow".
 
 IMPORTANT RULES:
 1. Return ONLY valid JSON - no additional text or explanations
-2. If no clear guest information is found, return an empty array
+2. If no clear guest information is found, return an empty array in the "guests" field
 3. Be conservative with confidence scores (0.0 to 1.0)
 4. Use reasonable defaults for missing information
 5. Convert dates to YYYY-MM-DD format
 6. Convert times to HH:MM format (24-hour)
+7. If multiple guests are mentioned, create a separate object for each in the "guests" array.
+8. The "floor_access" field MUST be in the format "Floor #" for a single floor or "Floors #, #, ..." for multiple floors.
 
 Expected JSON format:
 {
@@ -37,9 +43,18 @@ Expected JSON format:
       "visit_date": "YYYY-MM-DD",
       "estimated_arrival": "HH:MM",
       "organization": "Organization Name",
-      "floor_access": "Floor X" or "Floors X, Y",
-      "purpose": "Meeting purpose",
-      "notes": "Additional notes"
+      "floor_access": "Floor 7",
+      "purpose": "Meeting with Engineering Team",
+      "notes": "Will require guest wifi access."
+    },
+    {
+      "name": "Another Guest",
+      "visit_date": "YYYY-MM-DD",
+      "estimated_arrival": "HH:MM",
+      "organization": "Organization Name",
+      "floor_access": "Floors 3, 12",
+      "purpose": "Marketing presentation",
+      "notes": "Arriving with the first guest."
     }
   ],
   "confidence_score": 0.85,
